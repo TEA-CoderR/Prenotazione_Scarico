@@ -19,7 +19,9 @@
 | 隐私告知 | `/privacy` 草稿，待补充公司信息 |
 | 测试 | 31 个测试，含真实 PostgreSQL 上的并发抢同一时段 |
 
-下一步：仓库端（登录、待确认队列、当日看板）、管理端配置。
+| 仓库端 `/magazzino` | 员工登录；待确认队列（确认/驳回并邮件通知，驳回须填原因，超过 4 小时未处理标红）；当日看板（到场 → 开始卸货 → 完成，迟到 30 分钟可记爽约）；按仓库隔离权限；每 30 秒自动刷新 |
+
+下一步：管理端（在网页上配置营业时间、关闭日、用户）、报表、内部账号二次验证。
 
 ## 目录
 
@@ -62,6 +64,22 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/scarico_test npm test
 6. **检查**：打开 `https://prenota.casa-te.com/api/health`，应返回 `{"ok":true}`。
 
 更新版本：`git pull && docker compose up -d --build`（新的迁移会自动执行）。
+
+### 创建仓库员工账号
+
+```bash
+# 仓库主管，负责共用仓库和 FOIANO
+docker compose exec app node dist-scripts/create-user.js \
+  --email giulia.bianchi@casa-te.com --name "Giulia Bianchi" \
+  --role warehouse_manager --sites BMS-SFILIPPO,FOIANO
+```
+
+- 角色：`warehouse_clerk`（收货员）、`warehouse_manager`（主管，可取消预约）、`admin`（全部仓库）。
+- 仓库代码：`BMS-SFILIPPO`、`FOIANO`、`MARLIA`、`SANMARCO`、`SANCONCORDIO`。
+- 不指定密码时会生成一个临时密码并只显示一次；也可以用 `-e NEW_USER_PASSWORD=...` 指定（至少 10 位）。
+- 对已有邮箱再执行一次即重置密码、角色和仓库，并让该账号在所有设备上退出登录。
+
+员工登录地址：`https://prenota.casa-te.com/magazzino`
 
 ### 邮件（阿里云企业邮箱）
 

@@ -13,6 +13,8 @@ export interface BookingMailData {
   time: string; // HH:MM, local
   /** Only known when the plain token is at hand (creation); later mails omit the link. */
   manageUrl?: string;
+  /** Message from the warehouse, e.g. the reason for declining. */
+  note?: string | null;
 }
 
 const subjects: Record<Lang, Record<MailKind, string>> = {
@@ -45,9 +47,9 @@ const leads: Record<Lang, Record<MailKind, string>> = {
   },
 };
 
-const labels: Record<Lang, { code: string; when: string; where: string; manage: string }> = {
-  it: { code: "Codice", when: "Data e ora", where: "Luogo", manage: "Gestisci o annulla la prenotazione" },
-  en: { code: "Code", when: "Date and time", where: "Location", manage: "Manage or cancel the booking" },
+const labels: Record<Lang, { code: string; when: string; where: string; manage: string; note: string }> = {
+  it: { code: "Codice", when: "Data e ora", where: "Luogo", manage: "Gestisci o annulla la prenotazione", note: "Messaggio del magazzino" },
+  en: { code: "Code", when: "Date and time", where: "Location", manage: "Manage or cancel the booking", note: "Message from the warehouse" },
 };
 
 function escapeHtml(s: string): string {
@@ -63,6 +65,7 @@ export function renderBookingMail(kind: MailKind, lang: Lang, d: BookingMailData
     [l.when, `${d.date} ${d.time}`],
     [l.where, where],
   ];
+  if (d.note) rows.push([l.note, d.note]);
   const lines = [leads[lang][kind], "", ...rows.map(([k, v]) => `${k}: ${v}`)];
   if (d.manageUrl) lines.push("", `${l.manage}: ${d.manageUrl}`);
   const text = lines.join("\n");
