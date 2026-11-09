@@ -11,7 +11,8 @@ export interface BookingMailData {
   siteAddress: string | null;
   date: string; // YYYY-MM-DD, local
   time: string; // HH:MM, local
-  manageUrl: string;
+  /** Only known when the plain token is at hand (creation); later mails omit the link. */
+  manageUrl?: string;
 }
 
 const subjects: Record<Lang, Record<MailKind, string>> = {
@@ -62,9 +63,11 @@ export function renderBookingMail(kind: MailKind, lang: Lang, d: BookingMailData
     [l.when, `${d.date} ${d.time}`],
     [l.where, where],
   ];
-  const text = [leads[lang][kind], "", ...rows.map(([k, v]) => `${k}: ${v}`), "", `${l.manage}: ${d.manageUrl}`].join("\n");
+  const lines = [leads[lang][kind], "", ...rows.map(([k, v]) => `${k}: ${v}`)];
+  if (d.manageUrl) lines.push("", `${l.manage}: ${d.manageUrl}`);
+  const text = lines.join("\n");
   const html = `<p>${escapeHtml(leads[lang][kind])}</p><table>${rows
     .map(([k, v]) => `<tr><td><b>${escapeHtml(k)}</b></td><td>${escapeHtml(v)}</td></tr>`)
-    .join("")}</table><p><a href="${escapeHtml(d.manageUrl)}">${escapeHtml(l.manage)}</a></p>`;
+    .join("")}</table>${d.manageUrl ? `<p><a href="${escapeHtml(d.manageUrl)}">${escapeHtml(l.manage)}</a></p>` : ""}`;
   return { subject, text, html };
 }

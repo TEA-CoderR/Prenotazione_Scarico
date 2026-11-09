@@ -65,6 +65,7 @@ export const createBookingSchema = loadSchema.extend({
   orderNo: optText(60),
   ddtNo: optText(60),
   notes: optText(500),
+  lang: z.enum(["it", "en"]).default("it"),
 });
 
 export type CreateBookingInput = z.input<typeof createBookingSchema>;
@@ -83,7 +84,7 @@ interface SiteContext {
   dockIds: number[];
 }
 
-async function loadSiteContext(db: Db, entityCode: number): Promise<SiteContext> {
+export async function loadSiteContext(db: Db, entityCode: number): Promise<SiteContext> {
   const [row] = await db
     .select({
       entityId: entity.id,
@@ -321,6 +322,7 @@ export async function createBooking(
                 ddtNo: input.ddtNo,
                 notes: input.notes,
                 manageTokenHash: hashToken(manageToken),
+                lang: input.lang,
               })
               .returning();
             await sp.insert(bookingEvent).values({

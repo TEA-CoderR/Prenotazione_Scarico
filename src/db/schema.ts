@@ -150,6 +150,7 @@ export const booking = pgTable("booking", {
   ddtNo: text("ddt_no"),
   notes: text("notes"),
   manageTokenHash: text("manage_token_hash").notNull(),
+  lang: text("lang", { enum: ["it", "en"] }).notNull().default("it"),
   anonymizedAt: tstz("anonymized_at"),
   createdAt: tstz("created_at").notNull().defaultNow(),
   updatedAt: tstz("updated_at").notNull().defaultNow(),
