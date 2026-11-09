@@ -32,3 +32,18 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run build:scripts
+
+  docker:
+    # Builds the production image exactly as the server will, so a broken Dockerfile shows up here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t prenotazione-scarico:ci .
+      - name: Image starts and serves the health check
+        run: |
+          docker network create t
+          docker run -d --name db --network t -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=scarico postgres:16-alpine
+          for i in $(seq 1 30); do docker exec db pg_isready -U postgres && break; sleep 2; done
+          docker run -d --name app --network t -e DATABASE_URL=postgres://postgres:pw@db:5432/scarico -p 3000:3000 prenotazione-scarico:ci
+          for i in $(seq 1 30); do curl -fsS localhost:3000/api/health && exit 0; sleep 2; done
+          docker logs app; exit 1
