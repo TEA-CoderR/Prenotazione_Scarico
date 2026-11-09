@@ -11,7 +11,9 @@ export type BookingErrorCode =
   | "INVALID_TRANSITION"
   | "TOO_LATE"
   | "TOO_EARLY"
-  | "FORBIDDEN";
+  | "FORBIDDEN"
+  | "CONFLICT"
+  | "NOT_FOUND";
 
 export class BookingError extends Error {
   constructor(

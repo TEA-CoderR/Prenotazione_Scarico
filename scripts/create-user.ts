@@ -49,7 +49,11 @@ async function main() {
       const [u] = await tx
         .insert(appUser)
         .values({ email, name: values.name!, role, passwordHash })
-        .onConflictDoUpdate({ target: appUser.email, set: { name: values.name!, role, passwordHash, isActive: true } })
+        .onConflictDoUpdate({
+          target: appUser.email,
+          // Re-running the command is also the recovery path: new password and 2FA set up again.
+          set: { name: values.name!, role, passwordHash, isActive: true, totpSecret: null, totpPendingSecret: null, totpLastStep: null },
+        })
         .returning({ id: appUser.id });
       await tx.delete(userSite).where(eq(userSite.userId, u.id));
       if (sites.length) await tx.insert(userSite).values(sites.map((s) => ({ userId: u.id, siteId: s.id })));

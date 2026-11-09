@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { BookingStatus } from "@/db/schema";
@@ -67,6 +68,7 @@ export function WarehouseConsole() {
     fetch("/api/staff/me", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 401) return router.replace("/magazzino/login");
+        if (res.status === 403) return router.replace("/magazzino/2fa");
         const data = (await res.json()) as Me;
         const now = romeToday();
         setToday(now);
@@ -86,6 +88,7 @@ export function WarehouseConsole() {
     try {
       const res = await fetch(`/api/staff/board?site=${siteId}&date=${date}`, { cache: "no-store" });
       if (res.status === 401) return router.replace("/magazzino/login");
+      if (res.status === 403 && (await res.clone().json().catch(() => ({}))).error === "MFA_REQUIRED") return router.replace("/magazzino/2fa");
       if (!res.ok) throw new Error(String(res.status));
       setBoard(await res.json());
       setLoadError(false);
@@ -167,6 +170,11 @@ export function WarehouseConsole() {
         )}
         <div className="flex items-center gap-3 text-sm text-slate-500">
           <span>{me.user.name}</span>
+          {me.user.role !== "warehouse_clerk" && (
+            <Link href="/magazzino/admin" className="font-medium text-blue-700 underline dark:text-blue-400">
+              {me.user.role === "admin" ? "Amministrazione" : "Chiusure"}
+            </Link>
+          )}
           <button onClick={logout} className="underline">
             Esci
           </button>
