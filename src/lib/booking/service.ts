@@ -323,6 +323,8 @@ export async function createBooking(
                 notes: input.notes,
                 manageTokenHash: hashToken(manageToken),
                 lang: input.lang,
+                createdAt: now,
+                updatedAt: now,
               })
               .returning();
             await sp.insert(bookingEvent).values({
@@ -330,6 +332,7 @@ export async function createBooking(
               fromStatus: null,
               toStatus: "requested",
               actorType: "carrier",
+              createdAt: now,
             });
             return row;
           });
