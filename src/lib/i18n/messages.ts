@@ -64,6 +64,7 @@ const it = {
   reviewCarrier: "Trasportatore",
   submit: "Invia richiesta",
   submitting: "Invio in corso…",
+  captchaHint: "Completi la verifica di sicurezza per inviare.",
 
   doneTitle: "Richiesta inviata",
   doneLead: "Il posto è riservato. Le abbiamo inviato un'e-mail di riepilogo; ne riceverà un'altra quando il magazzino confermerà.",
@@ -79,6 +80,8 @@ const it = {
     LOAD_NOT_ALLOWED: "Il carico non è compatibile con il mezzo scelto.",
     DAILY_CAP_REACHED: "Il magazzino ha raggiunto la capacità per questo giorno.",
     RATE_LIMITED: "Troppe richieste. Riprovi tra qualche minuto.",
+    CAPTCHA_FAILED: "Verifica di sicurezza non riuscita. La ripeta e invii di nuovo.",
+    CAPTCHA_LOAD: "Impossibile caricare la verifica di sicurezza. Controlli la connessione e ricarichi la pagina.",
     TOO_LATE: "Troppo tardi per annullare online. Contatti il magazzino.",
     BOOKING_NOT_FOUND: "Prenotazione non trovata. Controlli il link ricevuto per e-mail.",
     GENERIC: "Qualcosa non ha funzionato. Riprovi.",
@@ -167,6 +170,7 @@ const en: Messages = {
   reviewCarrier: "Carrier",
   submit: "Send request",
   submitting: "Sending…",
+  captchaHint: "Complete the security check to send.",
 
   doneTitle: "Request sent",
   doneLead: "Your slot is held. We have sent you a summary e-mail; you will get another one when the warehouse confirms.",
@@ -182,6 +186,8 @@ const en: Messages = {
     LOAD_NOT_ALLOWED: "The load does not fit the chosen vehicle.",
     DAILY_CAP_REACHED: "The warehouse is full for this day.",
     RATE_LIMITED: "Too many requests. Please try again in a few minutes.",
+    CAPTCHA_FAILED: "Security check failed. Please complete it again and resend.",
+    CAPTCHA_LOAD: "Could not load the security check. Check your connection and reload the page.",
     TOO_LATE: "Too late to cancel online. Please contact the warehouse.",
     BOOKING_NOT_FOUND: "Booking not found. Please check the link in your e-mail.",
     GENERIC: "Something went wrong. Please try again.",

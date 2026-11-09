@@ -2,6 +2,7 @@ import { getDb } from "@/db/client";
 import { env } from "@/env";
 import { sendBookingMail } from "@/lib/booking/carrier";
 import { createBooking } from "@/lib/booking/service";
+import { verifyCaptcha } from "@/lib/captcha";
 import { getMailer } from "@/lib/mail/mailer";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { localTime } from "@/lib/time";
@@ -9,13 +10,22 @@ import { bookingErrorResponse, tooManyRequests } from "../errors";
 
 // POST /api/bookings  → creates a booking request (status "requested")
 export async function POST(request: Request) {
-  if (!rateLimit(`book:${clientIp(request.headers)}`, 10, 10 * 60_000)) return tooManyRequests();
+  const ip = clientIp(request.headers);
+  if (!rateLimit(`book:${ip}`, 10, 10 * 60_000)) return tooManyRequests();
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "VALIDATION", message: "Invalid JSON" }, { status: 400 });
+  }
+
+  const captcha = await verifyCaptcha((body as { captchaToken?: unknown } | null)?.captchaToken, {
+    secret: env().TURNSTILE_SECRET_KEY,
+    remoteIp: ip,
+  });
+  if (!captcha.ok) {
+    return Response.json({ error: "CAPTCHA_FAILED", message: captcha.codes.join(",") }, { status: 400 });
   }
 
   const db = getDb();

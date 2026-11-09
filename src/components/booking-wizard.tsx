@@ -6,6 +6,7 @@ import type { VehicleType } from "@/db/schema";
 import { formatDay } from "@/lib/i18n/messages";
 import { DEFAULT_SLOT_RULES, LoadNotAllowedError, resolveDuration } from "@/lib/scheduling/duration";
 import { useLang } from "./lang";
+import { Turnstile } from "./turnstile";
 import { Button, buttonClass, ErrorNote, Field, inputClass, StepHeader } from "./ui";
 
 interface EntityOption {
@@ -85,6 +86,12 @@ export function BookingWizard() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
 
+  // Captcha (Cloudflare Turnstile). siteKey "" = disabled on this server.
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
+  const [captchaLoadError, setCaptchaLoadError] = useState(false);
+
   const fetchEntities = useCallback(
     () =>
       getJson<{ entities: EntityOption[] }>("/api/entities")
@@ -94,6 +101,9 @@ export function BookingWizard() {
   );
   useEffect(() => {
     fetchEntities();
+    getJson<{ turnstileSiteKey: string | null }>("/api/config")
+      .then((c) => setSiteKey(c.turnstileSiteKey ?? ""))
+      .catch(() => setSiteKey(""));
   }, [fetchEntities]);
   const loadEntities = () => {
     setEntitiesError(false);
@@ -178,6 +188,7 @@ export function BookingWizard() {
           pallets,
           parcels,
           lang,
+          captchaToken,
           ...Object.fromEntries(Object.entries(details).map(([k, v]) => [k, v.trim() || undefined])),
         }),
       });
@@ -187,6 +198,7 @@ export function BookingWizard() {
         window.scrollTo({ top: 0 });
         return;
       }
+      setCaptchaReset((n) => n + 1); // the token was used up; get a new one
       const code: string = body.error ?? "GENERIC";
       if (code === "SLOT_UNAVAILABLE" || code === "DATE_NOT_BOOKABLE" || code === "SITE_CLOSED") {
         // Send the carrier back to pick another time, with fresh availability.
@@ -199,6 +211,7 @@ export function BookingWizard() {
       }
       setSubmitError(t.errors[code] ?? t.errors.GENERIC);
     } catch {
+      setCaptchaReset((n) => n + 1);
       setSubmitError(t.errors.GENERIC);
     } finally {
       setSubmitting(false);
@@ -526,8 +539,24 @@ export function BookingWizard() {
                 .map((k) => [t[k], trimmed(k)] as [string, string]),
             ]}
           />
+          {siteKey && (
+            <div className="flex flex-col gap-1">
+              <Turnstile
+                siteKey={siteKey}
+                lang={lang}
+                resetKey={captchaReset}
+                onToken={setCaptchaToken}
+                onLoadError={() => setCaptchaLoadError(true)}
+              />
+              {captchaLoadError ? (
+                <ErrorNote>{t.errors.CAPTCHA_LOAD}</ErrorNote>
+              ) : (
+                !captchaToken && <p className="text-sm text-slate-500">{t.captchaHint}</p>
+              )}
+            </div>
+          )}
           {submitError && <ErrorNote>{submitError}</ErrorNote>}
-          {nav(true, submit, submitting ? t.submitting : t.submit)}
+          {nav(siteKey === "" || !!captchaToken, submit, submitting ? t.submitting : t.submit)}
         </>
       )}
     </section>

@@ -57,7 +57,7 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/scarico_test npm test
 1. **DNS**：在 casa-te.com 的 DNS 里加 A 记录 `prenota` → 服务器公网 IP。
 2. **安装 Docker**：`curl -fsSL https://get.docker.com | sh`
 3. **获取代码**：`git clone https://github.com/TEA-CoderR/Prenotazione_Scarico.git && cd Prenotazione_Scarico`
-4. **配置**：`cp .env.example .env`，填写 `POSTGRES_PASSWORD`（长随机串）和 `SMTP_PASS`。
+4. **配置**：`cp .env.example .env`，填写 `POSTGRES_PASSWORD`（长随机串）、`SMTP_PASS` 和两个 Turnstile 密钥（见下）。
 5. **启动**：`docker compose up -d --build`。首次启动自动建表并写入基础数据，Caddy 自动申请 HTTPS 证书。
 6. **检查**：打开 `https://prenota.casa-te.com/api/health`，应返回 `{"ok":true}`。
 
@@ -68,6 +68,15 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/scarico_test npm test
 - 在企业邮箱后台新建 `noreply@casa-te.com`，用它的密码（或客户端专用密码）填 `SMTP_PASS`。
 - 在 casa-te.com 的 DNS 中按阿里云说明配置 **SPF** 和 **DKIM**，否则邮件容易进垃圾箱。
 - 确认企业邮箱的每日外发上限；预估每天最多约 300–400 封。
+
+### 人机验证（Cloudflare Turnstile）
+
+预约表单最后一步有人机验证，防止程序批量占位。免费，需要一个 Cloudflare 账号（域名不必托管在 Cloudflare）：
+
+1. Cloudflare 控制台 → Turnstile → 添加站点，域名填 `prenota.casa-te.com`，模式选 Managed。
+2. 把 Site Key 填到 `.env` 的 `TURNSTILE_SITE_KEY`，Secret Key 填到 `TURNSTILE_SECRET_KEY`，然后 `docker compose up -d`。
+
+两个都留空则不启用验证（仅用于本地开发）。Cloudflare 无法连接时，系统会拒绝提交（宁可拒绝也不放行）。
 
 ### 备份
 

@@ -10,6 +10,9 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   MAIL_FROM: z.string().default("Prenotazione Scarico <noreply@casa-te.com>"),
+  // Cloudflare Turnstile (captcha on the booking form). Both empty = no captcha (development).
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

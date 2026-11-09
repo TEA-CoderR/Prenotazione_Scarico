@@ -35,7 +35,8 @@ export default function PrivacyPage() {
       <h2 className="mt-6 font-semibold">Destinatari</h2>
       <p>
         Personale dei magazzini e fornitori tecnici che operano per nostro conto: hosting presso Aruba (Italia) e servizio
-        di posta elettronica per l&apos;invio delle notifiche.
+        di posta elettronica per l&apos;invio delle notifiche. Il modulo di prenotazione usa Cloudflare Turnstile per
+        distinguere le persone dai programmi automatici; il servizio tratta dati tecnici del browser e l&apos;indirizzo IP.
       </p>
 
       <h2 className="mt-6 font-semibold">Diritti</h2>
