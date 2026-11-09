@@ -1,5 +1,10 @@
 # Production stack for the Aruba cloud server.
 # Usage: cp .env.example .env  (fill it in)  &&  docker compose up -d --build
+#
+# Two ways to publish it:
+#  - COMPOSE_PROFILES=caddy: the bundled Caddy takes ports 80/443 and gets HTTPS itself.
+#  - COMPOSE_PROFILES empty: the server already has a web server (nginx, Cloudflare...);
+#    it forwards to the app on 127.0.0.1:${APP_PORT} (see deploy/nginx-prenota.conf).
 services:
   db:
     image: postgres:16-alpine
@@ -23,12 +28,16 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://scarico:${POSTGRES_PASSWORD}@db:5432/scarico
+    # Only reachable from the server itself (for an existing nginx in front).
+    ports:
+      - "127.0.0.1:${APP_PORT:-3010}:3000"
     depends_on:
       db:
         condition: service_healthy
 
   caddy:
     image: caddy:2-alpine
+    profiles: ["caddy"]
     restart: unless-stopped
     ports:
       - "80:80"

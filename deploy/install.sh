@@ -15,7 +15,18 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 docker compose version >/dev/null
 
-say "2/6 Firewall"
+say "2/6 Ports 80/443"
+# If another program (nginx, a VPN...) already uses them, the bundled Caddy is left off and
+# the existing web server forwards to the app instead (deploy/nginx-prenota.conf).
+OURS=$(docker ps --filter "name=prenotazione-scarico-caddy" -q 2>/dev/null || true)
+if [ -z "$OURS" ] && ss -ltnH '( sport = :80 or sport = :443 )' | grep -q .; then
+  MODE=external
+  echo "Ports 80/443 are already used by another program: using the existing web server in front."
+  ss -ltnpH '( sport = :80 or sport = :443 )' | sed 's/^/  /'
+else
+  MODE=caddy
+  echo "Ports free: the bundled Caddy will serve HTTPS."
+fi
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   ufw allow 80/tcp >/dev/null && ufw allow 443/tcp >/dev/null && echo "Ports 80 and 443 opened."
 else
@@ -37,14 +48,23 @@ if [ ! -f .env ]; then
       -e "/^DATABASE_URL=/d" \
       .env.example > .env
   [ -n "$SMTP_PASS" ] || sed -i "s|^SMTP_USER=.*|SMTP_USER=|" .env
+  [ "$MODE" = caddy ] || sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=|" .env
   chmod 600 .env
   echo ".env created (database password generated). Edit it later with: sudo nano .env"
 else
   echo ".env already exists: kept as is."
 fi
+# .env files from older versions: add the publishing mode.
+grep -q '^COMPOSE_PROFILES=' .env || { [ "$MODE" = caddy ] && echo "COMPOSE_PROFILES=caddy" >> .env || echo "COMPOSE_PROFILES=" >> .env; }
+grep -q '^APP_PORT=' .env || echo "APP_PORT=3010" >> .env
+MODE=$([ "$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2)" = caddy ] && echo caddy || echo external)
 DOMAIN=$(grep '^DOMAIN=' .env | cut -d= -f2)
+APP_PORT=$(grep '^APP_PORT=' .env | cut -d= -f2)
 
 say "4/6 DNS check for $DOMAIN"
+if [ "$MODE" = external ]; then
+  echo "Existing web server in front (e.g. Cloudflare → nginx): DNS is handled there, check skipped."
+else
 SERVER_IP=$(curl -fsS -4 https://ifconfig.me || true)
 DNS_IP=$(getent ahostsv4 "$DOMAIN" | awk 'NR==1{print $1}' || true)
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" = "$DNS_IP" ]; then
@@ -53,9 +73,11 @@ else
   echo "WARNING: $DOMAIN points to '${DNS_IP:-nothing}', this server is '${SERVER_IP:-unknown}'."
   echo "Add the DNS A record; the HTTPS certificate is obtained automatically once it resolves."
 fi
+fi
 
 say "5/6 Build and start (first time takes a few minutes)"
-docker compose up -d --build
+[ "$MODE" = caddy ] || docker rm -f prenotazione-scarico-caddy-1 >/dev/null 2>&1 || true  # leftover of a failed start
+docker compose up -d --build --remove-orphans
 for i in $(seq 1 60); do
   if docker compose exec -T app wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q '"ok":true'; then
     echo "Application is running."; break
@@ -74,4 +96,10 @@ else
   echo "An administrator already exists."
 fi
 
+if [ "$MODE" = external ]; then
+  say "Last step: publish it through the existing web server"
+  echo "The app listens on http://127.0.0.1:$APP_PORT (only from this server). Example nginx site:"
+  echo "  deploy/nginx-prenota.conf  (set server_name $DOMAIN and the certificate paths)"
+  curl -fsS "http://127.0.0.1:$APP_PORT/api/health" >/dev/null && echo "Local check OK: http://127.0.0.1:$APP_PORT/api/health"
+fi
 say "Done: https://$DOMAIN (carriers) · https://$DOMAIN/magazzino (staff)"
