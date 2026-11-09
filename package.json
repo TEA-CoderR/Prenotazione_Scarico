@@ -11,7 +11,8 @@
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:setup": "tsx scripts/migrate.ts --seed",
-    "build:scripts": "esbuild scripts/migrate.ts --bundle --platform=node --target=node22 --outfile=dist-scripts/migrate.js --external:pg-native --alias:@=./src"
+    "build:scripts": "esbuild scripts/migrate.ts scripts/create-user.ts --bundle --platform=node --target=node22 --outdir=dist-scripts --external:pg-native --alias:@=./src",
+    "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",

@@ -15,6 +15,13 @@
       "when": 1794643200000,
       "tag": "0001_booking_lang",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794729600000,
+      "tag": "0002_staff_sessions",
+      "breakpoints": true
     }
   ]
 }

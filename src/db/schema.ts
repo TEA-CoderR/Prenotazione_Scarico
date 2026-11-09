@@ -214,3 +214,12 @@ export const notificationLog = pgTable("notification_log", {
   error: text("error"),
   sentAt: tstz("sent_at").notNull().defaultNow(),
 });
+
+export const staffSession = pgTable("staff_session", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => appUser.id),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+  expiresAt: tstz("expires_at").notNull(),
+});

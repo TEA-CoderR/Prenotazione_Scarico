@@ -152,7 +152,7 @@ export async function cancelByToken(
 export async function sendBookingMail(
   db: Db,
   mailer: Mailer,
-  params: { bookingId: number; kind: MailKind; manageUrl?: string },
+  params: { bookingId: number; kind: MailKind; manageUrl?: string; note?: string | null },
 ): Promise<boolean> {
   const [b] = await db
     .select({
@@ -179,6 +179,7 @@ export async function sendBookingMail(
     date: localDate(b.startAt, b.tz),
     time: localTime(b.startAt, b.tz),
     manageUrl: params.manageUrl,
+    note: params.note,
   });
   let ok = true;
   let error: string | null = null;
