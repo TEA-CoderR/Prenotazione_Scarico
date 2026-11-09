@@ -1,0 +1,9 @@
+node_modules
+.next
+dist-scripts
+backups
+.git
+.env
+.env.*
+!.env.example
+coverage
