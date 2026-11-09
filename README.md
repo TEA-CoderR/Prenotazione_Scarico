@@ -12,11 +12,14 @@
 | 预约引擎 | `src/lib/booking/service.ts`：按货量算时长、查空闲时段、创建预约（并发安全）、状态流转、取消截止时间 |
 | 邮件 | 阿里云企业邮箱 SMTP；意/英模板，不含司机个人信息 |
 | ERP 接口 | `src/lib/orders/validator.ts`：预留订单校验接口，当前默认放行 |
-| 接口 | `GET /api/health`，`GET /api/availability?entity=0&date=2026-11-12&vehicle=van&pallets=4` |
+| 接口 | `GET /api/health`、`/api/entities`、`/api/booking-days`、`/api/availability`；`POST /api/bookings`；`GET/DELETE /api/manage/<token>` |
 | 部署 | Dockerfile + docker-compose（应用、PostgreSQL、Caddy 自动 HTTPS、每日备份） |
-| 测试 | 27 个测试，含真实 PostgreSQL 上的并发抢同一时段 |
+| 快递端预约向导 | 首页即向导：选主体 → 车型与货量 → 日期与时段 → 联系信息 → 确认提交；意/英双语，手机优先 |
+| 快递端自助管理 | 邮件中的专属链接 `/b/<token>`：查看状态、在截止时间前取消 |
+| 隐私告知 | `/privacy` 草稿，待补充公司信息 |
+| 测试 | 31 个测试，含真实 PostgreSQL 上的并发抢同一时段 |
 
-下一步：快递端预约向导、仓库待确认队列与当日看板、管理端配置、登录。
+下一步：仓库端（登录、待确认队列、当日看板）、管理端配置。
 
 ## 目录
 
