@@ -45,5 +45,6 @@ jobs:
           docker run -d --name db --network t -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=scarico postgres:16-alpine
           for i in $(seq 1 30); do docker exec db pg_isready -U postgres && break; sleep 2; done
           docker run -d --name app --network t -e DATABASE_URL=postgres://postgres:pw@db:5432/scarico -p 3000:3000 prenotazione-scarico:ci
-          for i in $(seq 1 30); do curl -fsS localhost:3000/api/health && exit 0; sleep 2; done
-          docker logs app; exit 1
+          for i in $(seq 1 30); do curl -fsS localhost:3000/api/health && break; sleep 2; done
+          # The same check deploy/*.sh run inside the container (busybox wget).
+          docker exec app wget -qO- http://127.0.0.1:3000/api/health | grep -q '"ok":true' || { docker logs app; exit 1; }

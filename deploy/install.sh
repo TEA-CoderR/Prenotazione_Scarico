@@ -79,7 +79,7 @@ say "5/6 Build and start (first time takes a few minutes)"
 [ "$MODE" = caddy ] || docker rm -f prenotazione-scarico-caddy-1 >/dev/null 2>&1 || true  # leftover of a failed start
 docker compose up -d --build --remove-orphans
 for i in $(seq 1 60); do
-  if docker compose exec -T app wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q '"ok":true'; then
+  if docker compose exec -T app wget -qO- http://127.0.0.1:3000/api/health 2>/dev/null | grep -q '"ok":true'; then
     echo "Application is running."; break
   fi
   sleep 3
