@@ -69,6 +69,8 @@ cd /opt/prenotazione-scarico && sudo ./deploy/install.sh
 
 脚本会：安装 Docker → 打开 80/443 端口 → 询问域名、发信邮箱密码、Turnstile 密钥（都可以先留空）并自动生成数据库密码 → 检查 DNS → 构建并启动 → 创建第一个管理员（显示临时密码）。可以重复执行，不会覆盖已有设置。
 
+**服务器上已有网站或 VPN 占用 80/443 端口时**，脚本会自动识别：不启动自带的 Caddy，应用只在本机 `127.0.0.1:3010` 上开放，由现有的 nginx 转发（模板见 `deploy/nginx-prenota.conf`，适用于 Cloudflare 代理 + 8443 源站端口的方式）。
+
 之后的设置修改：`sudo nano /opt/prenotazione-scarico/.env`，再执行 `sudo docker compose up -d`。
 
 **更新到最新版本**：`cd /opt/prenotazione-scarico && sudo ./deploy/update.sh`（数据库迁移自动执行）。
