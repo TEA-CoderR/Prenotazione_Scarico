@@ -21,7 +21,10 @@
 
 | 仓库端 `/magazzino` | 员工登录；待确认队列（确认/驳回并邮件通知，驳回须填原因，超过 4 小时未处理标红）；当日看板（到场 → 开始卸货 → 完成，迟到 30 分钟可记爽约）；按仓库隔离权限；每 30 秒自动刷新 |
 
-下一步：管理端（在网页上配置营业时间、关闭日、用户）、报表、内部账号二次验证。
+| 管理端 `/magazzino/admin` | 管理员：各仓库名称、地址、收货时间（可分段，如午休）、预约规则；关闭日；各车型最大货量和卸货时长；收货主体的公司全称与启用状态；员工账号（临时密码、重置密码、重置二次验证）；操作记录。仓库主管：管理自己仓库的关闭日 |
+| 二次验证 | 所有员工首次登录时用 Google/Microsoft Authenticator 绑定，之后每次登录需输入 6 位动态码 |
+
+下一步：报表（准时率、爽约率、卸货时长）。
 
 ## 目录
 
@@ -65,7 +68,18 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/scarico_test npm test
 
 更新版本：`git pull && docker compose up -d --build`（新的迁移会自动执行）。
 
-### 创建仓库员工账号
+### 创建第一个管理员
+
+部署后先用命令行建一个管理员，其他账号之后在管理端网页上建：
+
+```bash
+docker compose exec app node dist-scripts/create-user.js \
+  --email it@casa-te.com --name "Nome Cognome" --role admin
+```
+
+首次登录时会要求用手机上的 Google Authenticator 或 Microsoft Authenticator 扫码绑定。手机丢失时，由另一位管理员在「Utenti」里重置；如果唯一的管理员丢了手机，就再执行一次上面的命令（会同时重置密码和二次验证）。
+
+### 用命令行创建仓库员工账号（可选）
 
 ```bash
 # 仓库主管，负责共用仓库和 FOIANO

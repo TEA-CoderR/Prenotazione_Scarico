@@ -5,6 +5,8 @@ const STATUS: Partial<Record<BookingErrorCode, number>> = {
   ENTITY_NOT_FOUND: 404,
   BOOKING_NOT_FOUND: 404,
   FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
   SLOT_UNAVAILABLE: 409,
   DAILY_CAP_REACHED: 409,
 };

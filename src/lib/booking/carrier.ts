@@ -1,10 +1,11 @@
 // Carrier-facing reads and actions: entity list, bookable days, manage-by-link, mails.
 import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { booking, bookingPolicy, closure, entity, notificationLog, openingHours, site, type BookingStatus } from "@/db/schema";
+import { booking, bookingPolicy, closure, entity, notificationLog, openingHours, site, slotRule, type BookingStatus } from "@/db/schema";
 import { renderBookingMail, type Lang, type MailKind } from "@/lib/mail/templates";
 import type { Mailer } from "@/lib/mail/mailer";
 import { bookableDateRange } from "@/lib/scheduling/availability";
+import { DEFAULT_SLOT_RULES, type SlotRule } from "@/lib/scheduling/duration";
 import { addDays, isoWeekday, localDate, localTime } from "@/lib/time";
 import { BookingError } from "./errors";
 import { hashToken, loadSiteContext, transitionBooking } from "./service";
@@ -199,4 +200,13 @@ export async function sendBookingMail(
     error,
   });
   return ok;
+}
+
+/** Load limits and durations shown on the booking form (the all-sites rules set by the admin). */
+export async function publicSlotRules(db: Db): Promise<SlotRule[]> {
+  const rows = await db.select().from(slotRule).where(isNull(slotRule.siteId));
+  return DEFAULT_SLOT_RULES.map((d) => {
+    const r = rows.find((x) => x.vehicleType === d.vehicleType);
+    return r ? { vehicleType: r.vehicleType, maxPallets: r.maxPallets, maxParcels: r.maxParcels, durationMin: r.durationMin } : d;
+  });
 }

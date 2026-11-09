@@ -1,6 +1,7 @@
 import { connection, NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db/client";
 import { env } from "@/env";
+import type { UserRole } from "@/db/schema";
 import { getSessionUser, SESSION_COOKIE, type StaffUser } from "@/lib/auth/session";
 
 export function sessionCookieOptions(expires: Date) {
@@ -13,11 +14,21 @@ export function sessionCookieOptions(expires: Date) {
   };
 }
 
-/** The signed-in staff member, or a 401 response to return as is. */
-export async function requireStaff(request: NextRequest): Promise<StaffUser | Response> {
+/**
+ * The signed-in staff member, or an error response to return as is:
+ * 401 when not signed in, 403 MFA_REQUIRED until the second factor is done
+ * (pass allowMfaPending for the setup endpoints themselves).
+ */
+export async function requireStaff(
+  request: NextRequest,
+  opts: { allowMfaPending?: boolean; roles?: UserRole[] } = {},
+): Promise<StaffUser | Response> {
   await connection(); // per-request data: never prerender
   const user = await getSessionUser(getDb(), request.cookies.get(SESSION_COOKIE)?.value);
-  return user ?? NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user.mfaVerified && !opts.allowMfaPending) return NextResponse.json({ error: "MFA_REQUIRED" }, { status: 403 });
+  if (opts.roles && !opts.roles.includes(user.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  return user;
 }
 
 /**

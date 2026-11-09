@@ -6,6 +6,7 @@ import {
   boolean,
   date,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -163,6 +164,8 @@ export const appUser = pgTable("app_user", {
   role: userRole("role").notNull(),
   passwordHash: text("password_hash"),
   totpSecret: text("totp_secret"),
+  totpPendingSecret: text("totp_pending_secret"),
+  totpLastStep: bigint("totp_last_step", { mode: "number" }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });
@@ -222,4 +225,14 @@ export const staffSession = pgTable("staff_session", {
     .references(() => appUser.id),
   createdAt: tstz("created_at").notNull().defaultNow(),
   expiresAt: tstz("expires_at").notNull(),
+  mfaVerified: boolean("mfa_verified").notNull().default(false),
+});
+
+export const auditLog = pgTable("audit_log", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  userId: integer("user_id").references(() => appUser.id),
+  action: text("action").notNull(),
+  target: text("target"),
+  details: jsonb("details"),
+  createdAt: tstz("created_at").notNull().defaultNow(),
 });

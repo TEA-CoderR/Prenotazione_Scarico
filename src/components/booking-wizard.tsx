@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { VehicleType } from "@/db/schema";
 import { formatDay } from "@/lib/i18n/messages";
-import { DEFAULT_SLOT_RULES, LoadNotAllowedError, resolveDuration } from "@/lib/scheduling/duration";
+import { DEFAULT_SLOT_RULES, LoadNotAllowedError, resolveDuration, type SlotRule } from "@/lib/scheduling/duration";
 import { useLang } from "./lang";
 import { Turnstile } from "./turnstile";
 import { Button, buttonClass, ErrorNote, Field, inputClass, StepHeader } from "./ui";
@@ -91,6 +91,8 @@ export function BookingWizard() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
   const [captchaLoadError, setCaptchaLoadError] = useState(false);
+  // Load limits and durations as configured by the admin (defaults until loaded).
+  const [rules, setRules] = useState<SlotRule[]>(DEFAULT_SLOT_RULES);
 
   const fetchEntities = useCallback(
     () =>
@@ -101,8 +103,11 @@ export function BookingWizard() {
   );
   useEffect(() => {
     fetchEntities();
-    getJson<{ turnstileSiteKey: string | null }>("/api/config")
-      .then((c) => setSiteKey(c.turnstileSiteKey ?? ""))
+    getJson<{ turnstileSiteKey: string | null; slotRules?: SlotRule[] }>("/api/config")
+      .then((c) => {
+        setSiteKey(c.turnstileSiteKey ?? "");
+        if (c.slotRules?.length) setRules(c.slotRules);
+      })
       .catch(() => setSiteKey(""));
   }, [fetchEntities]);
   const loadEntities = () => {
@@ -114,12 +119,12 @@ export function BookingWizard() {
   const amount = Number(qty);
   const pallets = isParcel ? 0 : amount;
   const parcels = isParcel ? amount : 0;
-  const rule = DEFAULT_SLOT_RULES.find((r) => r.vehicleType === vehicle);
+  const rule = rules.find((r) => r.vehicleType === vehicle);
   const max = rule ? (isParcel ? rule.maxParcels ?? 0 : rule.maxPallets) : 0;
   let loadError: string | null = null;
   if (vehicle && qty !== "") {
     try {
-      resolveDuration(DEFAULT_SLOT_RULES, vehicle, pallets, parcels);
+      resolveDuration(rules, vehicle, pallets, parcels);
     } catch (e) {
       if (e instanceof LoadNotAllowedError) {
         loadError = amount < 1 ? t.atLeastOne : t.tooMany(max, isParcel ? t.unitParcels : t.unitPallets);
@@ -336,7 +341,7 @@ export function BookingWizard() {
           <h2 className="text-xl font-semibold">{t.loadTitle}</h2>
           <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t.loadTitle}>
             {VEHICLES.map((v) => {
-              const r = DEFAULT_SLOT_RULES.find((x) => x.vehicleType === v)!;
+              const r = rules.find((x) => x.vehicleType === v)!;
               return (
                 <Choice
                   key={v}
@@ -350,7 +355,7 @@ export function BookingWizard() {
                     setVehicle(v);
                   }}
                   title={t.vehicles[v].name}
-                  subtitle={t.vehicles[v].limit}
+                  subtitle={v === "parcel" ? t.upTo(r.maxParcels ?? 0, t.unitParcels) : t.upTo(r.maxPallets, t.unitPallets)}
                   badge={t.minutes(r.durationMin)}
                 />
               );
