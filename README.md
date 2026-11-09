@@ -57,49 +57,21 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/scarico_test npm test
 
 ## 部署到 Aruba 服务器
 
-前提：Aruba 云服务器（Cloud Server / VPS，Ubuntu），能 SSH 登录。普通网站空间 (hosting) 运行不了。
+前提：Aruba 云服务器（Ubuntu），能 SSH 登录；DNS 里已加 A 记录 `prenota` → 服务器公网 IP。
 
-1. **DNS**：在 casa-te.com 的 DNS 里加 A 记录 `prenota` → 服务器公网 IP。
-2. **安装 Docker**：`curl -fsSL https://get.docker.com | sh`
-3. **获取代码**：`git clone https://github.com/TEA-CoderR/Prenotazione_Scarico.git && cd Prenotazione_Scarico`
-4. **配置**：`cp .env.example .env`，填写 `POSTGRES_PASSWORD`（长随机串）、`SMTP_PASS` 和两个 Turnstile 密钥（见下）。
-5. **启动**：`docker compose up -d --build`。首次启动自动建表并写入基础数据，Caddy 自动申请 HTTPS 证书。
-6. **检查**：打开 `https://prenota.casa-te.com/api/health`，应返回 `{"ok":true}`。
-
-更新版本：`git pull && docker compose up -d --build`（新的迁移会自动执行）。
-
-### 创建第一个管理员
-
-部署后先用命令行建一个管理员，其他账号之后在管理端网页上建：
+SSH 登录服务器后执行：
 
 ```bash
-docker compose exec app node dist-scripts/create-user.js \
-  --email it@casa-te.com --name "Nome Cognome" --role admin
+sudo apt-get install -y git
+sudo git clone https://github.com/TEA-CoderR/Prenotazione_Scarico.git /opt/prenotazione-scarico
+cd /opt/prenotazione-scarico && sudo ./deploy/install.sh
 ```
 
-首次登录时会要求用手机上的 Google Authenticator 或 Microsoft Authenticator 扫码绑定。手机丢失时，由另一位管理员在「Utenti」里重置；如果唯一的管理员丢了手机，就再执行一次上面的命令（会同时重置密码和二次验证）。
+脚本会：安装 Docker → 打开 80/443 端口 → 询问域名、发信邮箱密码、Turnstile 密钥（都可以先留空）并自动生成数据库密码 → 检查 DNS → 构建并启动 → 创建第一个管理员（显示临时密码）。可以重复执行，不会覆盖已有设置。
 
-### 用命令行创建仓库员工账号（可选）
+之后的设置修改：`sudo nano /opt/prenotazione-scarico/.env`，再执行 `sudo docker compose up -d`。
 
-```bash
-# 仓库主管，负责共用仓库和 FOIANO
-docker compose exec app node dist-scripts/create-user.js \
-  --email giulia.bianchi@casa-te.com --name "Giulia Bianchi" \
-  --role warehouse_manager --sites BMS-SFILIPPO,FOIANO
-```
-
-- 角色：`warehouse_clerk`（收货员）、`warehouse_manager`（主管，可取消预约）、`admin`（全部仓库）。
-- 仓库代码：`BMS-SFILIPPO`、`FOIANO`、`MARLIA`、`SANMARCO`、`SANCONCORDIO`。
-- 不指定密码时会生成一个临时密码并只显示一次；也可以用 `-e NEW_USER_PASSWORD=...` 指定（至少 10 位）。
-- 对已有邮箱再执行一次即重置密码、角色和仓库，并让该账号在所有设备上退出登录。
-
-员工登录地址：`https://prenota.casa-te.com/magazzino`
-
-### 邮件（阿里云企业邮箱）
-
-- 在企业邮箱后台新建 `noreply@casa-te.com`，用它的密码（或客户端专用密码）填 `SMTP_PASS`。
-- 在 casa-te.com 的 DNS 中按阿里云说明配置 **SPF** 和 **DKIM**，否则邮件容易进垃圾箱。
-- 确认企业邮箱的每日外发上限；预估每天最多约 300–400 封。
+**更新到最新版本**：`cd /opt/prenotazione-scarico && sudo ./deploy/update.sh`（数据库迁移自动执行）。
 
 ### 人机验证（Cloudflare Turnstile）
 
