@@ -41,6 +41,12 @@ function romeToday(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
 }
 
+function groupByDate(list: StaffBooking[]): [string, StaffBooking[]][] {
+  const groups = new Map<string, StaffBooking[]>();
+  for (const b of list) groups.set(b.date, [...(groups.get(b.date) ?? []), b]);
+  return [...groups.entries()];
+}
+
 function shiftDay(ymd: string, days: number): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
@@ -58,7 +64,10 @@ export function WarehouseConsole() {
   // Set in the browser once signed in (not during prerender, where "today" is unknown).
   const [today, setToday] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
-  const [tab, setTab] = useState<"pending" | "day">("pending");
+  // Until the first load: then "Da confermare" if requests are waiting, else "Prossimi".
+  const [tab, setTab] = useState<"pending" | "upcoming" | "day" | null>(null);
+  // First day of the 14-day strip in "Giornata".
+  const [stripFrom, setStripFrom] = useState<string | null>(null);
   const [board, setBoard] = useState<Board | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -73,6 +82,7 @@ export function WarehouseConsole() {
         const now = romeToday();
         setToday(now);
         setDate(now);
+        setStripFrom(now);
         setMe(data);
         let stored: number | null = null;
         try {
@@ -84,18 +94,20 @@ export function WarehouseConsole() {
   }, [router]);
 
   const refresh = useCallback(async () => {
-    if (!siteId || !date) return;
+    if (!siteId || !date || !stripFrom) return;
     try {
-      const res = await fetch(`/api/staff/board?site=${siteId}&date=${date}`, { cache: "no-store" });
+      const res = await fetch(`/api/staff/board?site=${siteId}&date=${date}&strip=${stripFrom}`, { cache: "no-store" });
       if (res.status === 401) return router.replace("/magazzino/login");
       if (res.status === 403 && (await res.clone().json().catch(() => ({}))).error === "MFA_REQUIRED") return router.replace("/magazzino/2fa");
       if (!res.ok) throw new Error(String(res.status));
-      setBoard(await res.json());
+      const data = (await res.json()) as Board;
+      setBoard(data);
+      setTab((current) => current ?? (data.pending.length ? "pending" : "upcoming"));
       setLoadError(false);
     } catch {
       setLoadError(true);
     }
-  }, [siteId, date, router]);
+  }, [siteId, date, stripFrom, router]);
 
   // Load now, every 30 s, and whenever the tablet wakes up.
   useEffect(() => {
@@ -136,11 +148,20 @@ export function WarehouseConsole() {
     router.replace("/magazzino/login");
   }
 
-  if (!me || !date || !today) return <p className="p-4 text-slate-500">{loadError ? "Connessione non riuscita." : t.loading}</p>;
+  if (!me || !date || !today || !stripFrom) return <p className="p-4 text-slate-500">{loadError ? "Connessione non riuscita." : t.loading}</p>;
   if (!me.sites.length) return <ErrorNote>Nessun magazzino assegnato a questo utente. Contatti l&apos;amministratore.</ErrorNote>;
 
   const canCancel = me.user.role !== "warehouse_clerk";
-  const list = tab === "pending" ? board?.pending : board?.day;
+  // While another day is loading, show nothing rather than the previous day's list.
+  const dayLoaded = board?.date === date;
+  const list = tab === "pending" ? board?.pending : tab === "day" && dayLoaded ? board?.day : undefined;
+
+  /** Open "Giornata" on a date, moving the strip if the date is outside it. */
+  function goToDay(d: string) {
+    setDate(d);
+    setTab("day");
+    if (stripFrom && (d < stripFrom || d >= shiftDay(stripFrom, 14))) setStripFrom(d);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -184,50 +205,125 @@ export function WarehouseConsole() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900" role="tablist">
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900" role="tablist">
         {(
           [
-            ["pending", `Da confermare${board ? ` (${board.pending.length})` : ""}`],
-            ["day", "Giornata"],
+            ["pending", "Da confermare", board?.pending.length],
+            ["upcoming", "Prossimi", board?.upcoming.length],
+            ["day", "Giornata", undefined],
           ] as const
-        ).map(([key, label]) => (
+        ).map(([key, label, n]) => (
           <button
             key={key}
             role="tab"
             aria-selected={tab === key}
             onClick={() => setTab(key)}
-            className={`min-h-11 rounded-lg font-semibold ${tab === key ? "bg-white shadow-sm dark:bg-slate-800" : "text-slate-600 dark:text-slate-400"}`}
+            className={`flex min-h-11 flex-wrap items-center justify-center gap-x-1.5 rounded-lg px-1 text-sm font-semibold sm:text-base ${tab === key ? "bg-white shadow-sm dark:bg-slate-800" : "text-slate-600 dark:text-slate-400"}`}
           >
             {label}
+            {n !== undefined && (
+              <span
+                className={`rounded-full px-2 text-xs tabular-nums ${key === "pending" && n > 0 ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"}`}
+              >
+                {n}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {tab === "day" && (
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="secondary" aria-label="Giorno precedente" onClick={() => setDate(shiftDay(date, -1))}>
-            ‹
-          </Button>
-          <div className="text-center">
+      {tab === "day" && board && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-lg font-semibold first-letter:uppercase">
               {formatDay(date, "it", { weekday: "long", day: "numeric", month: "long" })}
             </div>
-            {date !== today && (
-              <button className="text-sm text-blue-700 underline dark:text-blue-400" onClick={() => setDate(today)}>
-                Torna a oggi
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {date !== today && (
+                <button className="text-sm text-blue-700 underline dark:text-blue-400" onClick={() => goToDay(today)}>
+                  Oggi
+                </button>
+              )}
+              <input
+                type="date"
+                aria-label="Vai al giorno"
+                value={date}
+                onChange={(e) => e.target.value && goToDay(e.target.value)}
+                className={`${inputClass} w-auto py-1.5`}
+              />
+            </div>
           </div>
-          <Button variant="secondary" aria-label="Giorno successivo" onClick={() => setDate(shiftDay(date, 1))}>
-            ›
-          </Button>
+          <div className="flex items-stretch gap-1">
+            <button
+              aria-label="Settimana precedente"
+              onClick={() => setStripFrom(shiftDay(stripFrom, -7))}
+              className="rounded-lg border border-slate-300 px-2 text-lg dark:border-slate-700"
+            >
+              ‹
+            </button>
+            <div className="grid flex-1 grid-cols-7 gap-1" role="radiogroup" aria-label="Giorni">
+              {board.days.map((d) => {
+                const selected = d.date === date;
+                return (
+                  <button
+                    key={d.date}
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={`${formatDay(d.date, "it", { weekday: "long", day: "numeric", month: "long" })}: ${d.open ? `${d.bookings} scarichi` : "chiuso"}`}
+                    onClick={() => goToDay(d.date)}
+                    className={`relative flex flex-col items-center rounded-lg border px-0.5 py-1.5 text-xs transition-colors ${
+                      selected
+                        ? "border-blue-700 bg-blue-700 text-white"
+                        : d.open
+                          ? "border-slate-300 hover:border-blue-700 dark:border-slate-700"
+                          : "border-transparent bg-slate-50 text-slate-400 dark:bg-slate-900 dark:text-slate-600"
+                    }`}
+                  >
+                    <span className="uppercase">{formatDay(d.date, "it", { weekday: "short" }).replace(".", "")}</span>
+                    <span className={`text-base font-semibold leading-tight ${d.date === today && !selected ? "text-blue-700 underline dark:text-blue-400" : ""}`}>
+                      {formatDay(d.date, "it", { day: "numeric" })}
+                    </span>
+                    <span
+                      className={`mt-0.5 min-w-6 rounded-full px-1.5 text-center font-semibold tabular-nums ${
+                        d.bookings === 0
+                          ? selected ? "text-blue-100" : "text-slate-400"
+                          : selected
+                            ? "bg-white text-blue-800"
+                            : "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200"
+                      }`}
+                    >
+                      {d.open || d.bookings ? d.bookings : "–"}
+                    </span>
+                    {d.pending > 0 && (
+                      <span
+                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-amber-500"
+                        title={`${d.pending} da confermare`}
+                        aria-hidden
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              aria-label="Settimana successiva"
+              onClick={() => setStripFrom(shiftDay(stripFrom, 7))}
+              className="rounded-lg border border-slate-300 px-2 text-lg dark:border-slate-700"
+            >
+              ›
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Il numero indica gli scarichi del giorno; il punto arancione indica richieste ancora da confermare.
+          </p>
         </div>
       )}
 
       {loadError && <ErrorNote>Aggiornamento non riuscito. Riprovo automaticamente.</ErrorNote>}
       {actionError && <ErrorNote>{actionError}</ErrorNote>}
 
-      {tab === "day" && board && board.day.length > 0 && (
+      {tab === "day" && board && !dayLoaded && <p className="text-slate-500">{t.loading}</p>}
+      {tab === "day" && board && dayLoaded && board.day.length > 0 && (
         <p className="text-sm text-slate-500">
           Scarichi: {board.day.filter((b) => !["rejected", "cancelled"].includes(b.status)).length} · Completati:{" "}
           {board.day.filter((b) => b.status === "completed").length} · Pallet:{" "}
@@ -241,6 +337,35 @@ export function WarehouseConsole() {
           {tab === "pending" ? "Nessuna richiesta da confermare." : "Nessuna prenotazione in questo giorno."}
         </p>
       )}
+
+      {tab === "upcoming" && board && (
+        <div className="flex flex-col gap-5">
+          {board.upcoming.length === 0 && (
+            <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-500 dark:border-slate-700">
+              Nessuna prenotazione nei prossimi 31 giorni.
+            </p>
+          )}
+          {groupByDate(board.upcoming).map(([d, items]) => (
+            <section key={d} className="flex flex-col gap-2">
+              <div className="sticky top-0 z-10 -mx-1 flex items-baseline justify-between gap-2 bg-[var(--background)] px-1 py-1">
+                <h2 className="text-lg font-semibold first-letter:uppercase">
+                  {d === today ? "Oggi, " : ""}
+                  {formatDay(d, "it", { weekday: "long", day: "numeric", month: "long" })}
+                </h2>
+                <button className="shrink-0 text-sm text-blue-700 underline dark:text-blue-400" onClick={() => goToDay(d)}>
+                  {items.length} {items.length === 1 ? "scarico" : "scarichi"} · apri giornata
+                </button>
+              </div>
+              <ul className="flex flex-col gap-3">
+                {items.map((b) => (
+                  <BookingCard key={b.id} b={b} showDate={false} busy={busyId === b.id} canCancel={canCancel} onStatus={setStatus} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+
       <ul className="flex flex-col gap-3">
         {list?.map((b) => (
           <BookingCard key={b.id} b={b} showDate={tab === "pending"} busy={busyId === b.id} canCancel={canCancel} onStatus={setStatus} />

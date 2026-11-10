@@ -5,18 +5,21 @@ import { localDate } from "@/lib/time";
 import { bookingErrorResponse } from "../../errors";
 import { requireStaff } from "../auth";
 
-// GET /api/staff/board?site=1&date=2026-11-10 → pending requests + that day's bookings
+// GET /api/staff/board?site=1&date=2026-11-10&strip=2026-11-09
+// → pending requests, that day's bookings, upcoming bookings, per-day counts for the strip
 export async function GET(request: NextRequest) {
   const user = await requireStaff(request);
   if (user instanceof Response) return user;
   const q = request.nextUrl.searchParams;
   const siteId = Number(q.get("site"));
   const date = q.get("date") ?? localDate(new Date(), "Europe/Rome");
-  if (!Number.isInteger(siteId) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  const strip = q.get("strip") ?? undefined; // first day of the 14-day strip (default: today)
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (!Number.isInteger(siteId) || !ymd.test(date) || (strip && !ymd.test(strip))) {
     return Response.json({ error: "VALIDATION" }, { status: 400 });
   }
   try {
-    return Response.json(await getBoard(getDb(), user, siteId, date));
+    return Response.json(await getBoard(getDb(), user, siteId, date, new Date(), strip));
   } catch (err) {
     return bookingErrorResponse(err);
   }
