@@ -180,4 +180,30 @@ describe.skipIf(!url)("staff (PostgreSQL)", () => {
     await expectCode(staffSetStatus(db, clerkShared, { bookingId: c.id, to: "no_show" }, { now: at("14:20") }), "TOO_EARLY");
     await staffSetStatus(db, clerkShared, { bookingId: c.id, to: "no_show" }, { now: at("14:31") });
   });
+  it("lists upcoming bookings and per-day counts for the date strip", async () => {
+    const a = await book({ date: "2026-11-10", time: "10:00" });
+    const b = await book({ date: "2026-11-12", time: "09:00", pallets: 5 });
+    const c = await book({ date: "2026-11-11", time: "11:00" });
+    await staffSetStatus(db, clerkShared, { bookingId: b.id, to: "confirmed" }, { now: NOW });
+    await staffSetStatus(db, manager, { bookingId: c.id, to: "cancelled" }, { now: NOW });
+
+    const board = await getBoard(db, clerkShared, siteIds["BMS-SFILIPPO"], "2026-11-09", NOW);
+    expect(board.upcoming.map((x) => [x.date, x.time, x.status])).toEqual([
+      ["2026-11-10", "10:00", "requested"],
+      ["2026-11-12", "09:00", "confirmed"],
+    ]);
+    expect(board.days).toHaveLength(14);
+    const day = (d: string) => board.days.find((x) => x.date === d)!;
+    expect(board.days[0]).toEqual({ date: "2026-11-09", bookings: 0, pending: 0, pallets: 0, open: true });
+    expect(day("2026-11-10")).toMatchObject({ bookings: 1, pending: 1, pallets: 3 });
+    expect(day("2026-11-11")).toMatchObject({ bookings: 0 }); // cancelled does not count
+    expect(day("2026-11-12")).toMatchObject({ bookings: 1, pending: 0, pallets: 5 });
+    expect(day("2026-11-14").open).toBe(false); // Saturday
+    expect(day("2026-12-08")).toBeUndefined();
+
+    // Strip starting elsewhere: 8 December (holiday) is shown closed.
+    const dec = await getBoard(db, clerkShared, siteIds["BMS-SFILIPPO"], "2026-12-07", NOW, "2026-12-07");
+    expect(dec.days[1]).toMatchObject({ date: "2026-12-08", open: false });
+    expect(a.status).toBe("requested");
+  });
 });
