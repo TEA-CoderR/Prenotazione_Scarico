@@ -172,9 +172,12 @@ export function WarehouseConsole() {
           <span>{me.user.name}</span>
           {me.user.role !== "warehouse_clerk" && (
             <Link href="/magazzino/admin" className="font-medium text-blue-700 underline dark:text-blue-400">
-              {me.user.role === "admin" ? "Amministrazione" : "Chiusure"}
+              {me.user.role === "admin" ? "Amministrazione" : "Report e chiusure"}
             </Link>
           )}
+          <Link href="/magazzino/account" className="underline">
+            Password
+          </Link>
           <button onClick={logout} className="underline">
             Esci
           </button>

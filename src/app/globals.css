@@ -3,6 +3,12 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Chart tokens (reference data-viz palette, light) */
+  --viz-series-1: #2a78d6;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-empty: #f3f2ee;
 }
 
 @theme inline {
@@ -15,6 +21,11 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --viz-series-1: #3987e5;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-muted: #898781;
+    --viz-empty: #1f1f1d;
   }
 }
 

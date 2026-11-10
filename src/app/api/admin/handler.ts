@@ -6,7 +6,7 @@ import { bookingErrorResponse } from "../errors";
 import { rejectCrossSite, requireStaff } from "../staff/auth";
 
 type Ctx = { params: Promise<Record<string, string>> };
-type Handler = (args: { db: Db; user: StaffUser; body: unknown; id: number }) => Promise<unknown>;
+type Handler = (args: { db: Db; user: StaffUser; body: unknown; id: number; query: URLSearchParams }) => Promise<unknown>;
 
 /**
  * Wraps an admin endpoint: sign-in + 2FA + role check, same-origin JSON for writes,
@@ -26,7 +26,8 @@ export function adminRoute(handler: Handler, roles: UserRole[] = ["admin"]) {
     if (params?.id !== undefined && !Number.isInteger(id)) return Response.json({ error: "VALIDATION" }, { status: 400 });
     const body = write ? await request.json().catch(() => null) : null;
     try {
-      const result = await handler({ db: getDb(), user, body, id });
+      const result = await handler({ db: getDb(), user, body, id, query: request.nextUrl.searchParams });
+      if (result instanceof Response) return result; // e.g. a file download
       return Response.json(result ?? { ok: true });
     } catch (err) {
       return bookingErrorResponse(err);
