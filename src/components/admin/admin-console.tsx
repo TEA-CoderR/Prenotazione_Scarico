@@ -7,6 +7,7 @@ import { api } from "./api";
 import { AuditTab } from "./audit-tab";
 import { ClosuresTab } from "./closures-tab";
 import { EntitiesTab } from "./entities-tab";
+import { ReportTab } from "./report-tab";
 import { RulesTab } from "./rules-tab";
 import { SitesTab } from "./sites-tab";
 import { UsersTab } from "./users-tab";
@@ -22,6 +23,7 @@ interface Me {
 }
 
 const TABS = [
+  ["report", "Report"],
   ["sites", "Magazzini"],
   ["closures", "Chiusure"],
   ["rules", "Durate"],
@@ -34,7 +36,7 @@ type Tab = (typeof TABS)[number][0];
 export function AdminConsole() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
-  const [tab, setTab] = useState<Tab>("sites");
+  const [tab, setTab] = useState<Tab>("report");
 
   useEffect(() => {
     api<Me>("GET", "/api/staff/me").then((r) => {
@@ -43,18 +45,17 @@ export function AdminConsole() {
       if (!r.ok) return;
       if (r.data.user.role === "warehouse_clerk") return router.replace("/magazzino");
       setMe(r.data);
-      if (r.data.user.role !== "admin") setTab("closures");
     });
   }, [router]);
 
   if (!me) return <p className="text-slate-500">Caricamento…</p>;
   const isAdmin = me.user.role === "admin";
-  const tabs = isAdmin ? TABS : TABS.filter(([k]) => k === "closures");
+  const tabs = isAdmin ? TABS : TABS.filter(([k]) => k === "report" || k === "closures");
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{isAdmin ? "Amministrazione" : "Chiusure del magazzino"}</h1>
+        <h1 className="text-2xl font-semibold">{isAdmin ? "Amministrazione" : "Report e chiusure"}</h1>
         <Link href="/magazzino" className="text-sm text-blue-700 underline dark:text-blue-400">
           ← Torna alle prenotazioni
         </Link>
@@ -74,6 +75,7 @@ export function AdminConsole() {
           ))}
         </div>
       )}
+      {tab === "report" && <ReportTab sites={me.sites} isAdmin={isAdmin} />}
       {tab === "sites" && <SitesTab />}
       {tab === "closures" && <ClosuresTab sites={me.sites} isAdmin={isAdmin} />}
       {tab === "rules" && <RulesTab />}

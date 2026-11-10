@@ -22,6 +22,7 @@ const ACTIONS: Record<string, string> = {
   "user.update": "Modifica utente",
   "user.reset_password": "Nuova password",
   "user.reset_2fa": "Azzerata verifica 2 passaggi",
+  "user.change_password": "Password cambiata dall'utente",
 };
 
 export function AuditTab() {
