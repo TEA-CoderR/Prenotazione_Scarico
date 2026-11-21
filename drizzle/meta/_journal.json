@@ -50,6 +50,13 @@
       "when": 1795420800000,
       "tag": "0006_store_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795507200000,
+      "tag": "0007_stock_reports",
+      "breakpoints": true
     }
   ]
 }

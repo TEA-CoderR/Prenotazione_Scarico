@@ -315,3 +315,20 @@ export const storeListLine = pgTable(
   },
   (t) => [primaryKey({ columns: [t.listId, t.ean] })],
 );
+
+export const stockReport = pgTable("stock_report", {
+  id: serial("id").primaryKey(),
+  entityCode: smallint("entity_code").notNull(),
+  ean: text("ean").notNull(),
+  name: text("name").notNull().default(""),
+  systemQty: numeric("system_qty", { mode: "number" }),
+  countedQty: integer("counted_qty").notNull(),
+  countedBy: text("counted_by").notNull(),
+  device: text("device"),
+  status: text("status").notNull().default("open"),
+  answer: text("answer"),
+  handledBy: text("handled_by"),
+  handledAt: tstz("handled_at"),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+  updatedAt: tstz("updated_at").notNull().defaultNow(),
+});
