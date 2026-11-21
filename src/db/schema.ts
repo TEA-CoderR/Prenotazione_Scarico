@@ -237,3 +237,36 @@ export const auditLog = pgTable("audit_log", {
   details: jsonb("details"),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });
+
+export const scannerDevice = pgTable("scanner_device", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  entityCode: smallint("entity_code"),
+  tokenHash: text("token_hash").unique(),
+  pairCodeHash: text("pair_code_hash").unique(),
+  pairExpiresAt: tstz("pair_expires_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+  pairedAt: tstz("paired_at"),
+  lastSeenAt: tstz("last_seen_at"),
+});
+
+export const catalogSnapshot = pgTable("catalog_snapshot", {
+  id: serial("id").primaryKey(),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+  createdBy: text("created_by").notNull(),
+  itemCount: integer("item_count").notNull(),
+  payload: jsonb("payload").notNull(),
+});
+
+export const catalogPart = pgTable(
+  "catalog_part",
+  {
+    uploadId: text("upload_id").notNull(),
+    part: integer("part").notNull(),
+    parts: integer("parts").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.uploadId, t.part] })],
+);
