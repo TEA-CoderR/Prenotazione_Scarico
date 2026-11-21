@@ -60,4 +60,20 @@ class StoreListTest {
             feedback = Feedback(mapOf("1" to 2, "2" to 1, "3" to 0, "4" to 1), emptyMap(), emptyList()))
         assertEquals(Feedbacks.Summary(1, 1, 1, 1), Feedbacks.summary(s))
     }
+
+    @Test
+    fun stockReportsNewestOpenOrRecentlyHandled() {
+        val day = 86_400_000L
+        val now = 100 * day
+        fun rep(id: Int, ean: String, status: String, at: Long, handled: Long = 0) =
+            StockReport(id, ean, "X", 12.0, 0, "Marco", status, "", at, handled)
+        val v = ServerView("w", 0, null, null, emptyList(), 0, listOf(
+            rep(1, "1", "fixed", now - 30 * day, now - 29 * day), rep(2, "1", "open", now - day),
+            rep(3, "2", "fixed", now - 20 * day, now - 20 * day), rep(4, "3", "rejected", now - 2 * day, now - day)))
+        val l = StoreList(v)
+        assertEquals(2, l.report("1", now)?.id)
+        assertEquals(null, l.report("2", now))          // corrected long ago: nothing to show
+        assertEquals("rejected", l.report("3", now)?.status)
+        assertEquals(1, l.openReports)
+    }
 }

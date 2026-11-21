@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { Db } from "@/db/client";
 import { appSetting, storeList, storeListLine } from "@/db/schema";
 import { BookingError } from "@/lib/booking/errors";
+import { storeReports } from "@/lib/stock-reports";
 import { addDays, isoWeekday, localDate, zonedToUtc } from "@/lib/time";
 
 export const TZ = "Europe/Rome";
@@ -154,6 +155,7 @@ export async function currentList(db: Db, entityCode: number | null, now = new D
     list: cur ? listView(cur, lines.get(cur.id) ?? []) : null,
     previous: prev ? listView(prev, lines.get(prev.id) ?? []) : null,
     reminders: [...reminders.values()],
+    stockReports: await storeReports(db, store, now),
   };
 }
 

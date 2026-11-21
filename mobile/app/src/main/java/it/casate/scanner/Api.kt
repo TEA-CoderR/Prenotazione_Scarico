@@ -128,6 +128,18 @@ class Api(private val ctx: Context) {
 
     fun submitList(): ServerView = keepView(request("POST", "/api/scanner/list/submit", JSONObject()).second)
 
+    /** Name of who counts stock on this scanner (asked once, then suggested). */
+    var counter: String
+        get() = prefs.getString("counter", "") ?: ""
+        set(v) = prefs.edit().putString("counter", v.trim()).apply()
+
+    /** Sends a stock error: the store counted `counted` pieces (shelf + back room); the system says `system`. */
+    fun reportStock(ean: String, name: String, system: Double?, counted: Int, by: String): StockReport {
+        val body = JSONObject().put("ean", ean).put("name", name.take(120)).put("systemQty", system ?: JSONObject.NULL)
+            .put("counted", counted).put("countedBy", by).put("shelf", true).put("backroom", true)
+        return parseReport(JSONObject(request("POST", "/api/scanner/stock-report", body).second))
+    }
+
     fun loadCatalog(): Catalog? {
         if (!catalogFile.exists()) return null
         return runCatching { parse(JSONObject(catalogFile.readText(Charsets.UTF_8))) }.getOrNull()
@@ -193,12 +205,23 @@ class Api(private val ctx: Context) {
             o.optJSONArray("reminders")?.let { a ->
                 for (i in 0 until a.length()) a.optJSONObject(i)?.let { rem.add(Line(it.optString("ean"), it.optString("name"), 0, "remind")) }
             }
+            val reps = ArrayList<StockReport>()
+            o.optJSONArray("stockReports")?.let { a ->
+                for (i in 0 until a.length()) a.optJSONObject(i)?.let { reps.add(parseReport(it)) }
+            }
             return ServerView(
                 week = o.optString("week"), deadline = time(o.optString("deadline")),
                 list = parseList(o.optJSONObject("list")), previous = parseList(o.optJSONObject("previous")),
-                reminders = rem, fetchedAt = System.currentTimeMillis(),
+                reminders = rem, fetchedAt = System.currentTimeMillis(), stockReports = reps,
             )
         }
+
+        fun parseReport(o: JSONObject) = StockReport(
+            id = o.optInt("id"), ean = o.optString("ean"), name = o.optString("name"),
+            systemQty = if (o.isNull("systemQty")) null else o.optDouble("systemQty"),
+            counted = o.optInt("counted"), countedBy = o.optString("countedBy"), status = o.optString("status"),
+            answer = str(o, "answer") ?: "", createdAt = time(str(o, "createdAt")), handledAt = time(str(o, "handledAt")),
+        )
 
         private fun num(a: JSONArray, i: Int): Double? = if (i >= a.length() || a.isNull(i)) null else a.optDouble(i).takeIf { !it.isNaN() }
 
@@ -236,6 +259,7 @@ class Api(private val ctx: Context) {
                     stock = num(r, 1), sold30 = num(r, 2), transitBoxes = num(r, 3), suggestBoxes = num(r, 4)?.toInt(),
                     cost = num(r, 5), price = num(r, 6), promoPrice = num(r, 7),
                     promoEnd = if (r.length() > 8 && !r.isNull(8)) r.optString(8) else "", pack = num(r, 9),
+                    lastSaleDays = num(r, 10)?.toInt(), suspect = (num(r, 11) ?: 0.0) > 0,
                 )
             }
             return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info)

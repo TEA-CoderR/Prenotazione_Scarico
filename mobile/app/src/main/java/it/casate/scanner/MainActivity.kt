@@ -57,7 +57,7 @@ class MainActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private var tones: ToneGenerator? = null
 
-    private enum class Screen { PAIR, HOME, RESULT, REVIEW, SENT }
+    private enum class Screen { PAIR, HOME, RESULT, REVIEW, SENT, COUNT }
     private var screen = Screen.PAIR
     private var offline = false
     private var syncing = false
@@ -125,6 +125,7 @@ class MainActivity : Activity() {
         when (screen) {
             Screen.RESULT -> { pending = null; showHome() }
             Screen.REVIEW, Screen.SENT -> showHome()
+            Screen.COUNT -> showResult()
             else -> super.onBackPressed()
         }
     }
@@ -468,7 +469,7 @@ class MainActivity : Activity() {
 
     // ================================================================== scanning
     private fun onScan(raw: String) {
-        if (screen == Screen.PAIR) return
+        if (screen == Screen.PAIR || screen == Screen.COUNT) return
         val cat = catalog
         if (cat == null) {
             beep(Kind.UNKNOWN)
@@ -545,7 +546,10 @@ class MainActivity : Activity() {
         val v = p.verdict
         val cat = catalog
         val target = targetEan(v, p.scan)
-        val info = cat?.info(target)
+        val sysInfo = cat?.info(target)
+        val rep = list.report(target)
+        // the store reported a different stock: show and count with what it counted until the office corrects it
+        val info = if (rep?.status == "open") sysInfo?.copy(stock = rep.counted.toDouble(), suspect = false) else sysInfo
         val inList = list.line(target)
         val root = page()
         root.addView(topBar(back = true))
@@ -624,7 +628,8 @@ class MainActivity : Activity() {
             val cover = info.coverDays((info.transitBoxes ?: 0.0) * (info.pack ?: 0.0))
             val empty = (info.stock ?: 0.0) <= 0
             fun add(t: View, first: Boolean) = tiles.addView(t, ui.lp(w = 0, weight = 1f, start = if (first) 0 else 6))
-            add(if (empty) ui.tile("In negozio", "0", "pz", C.RED_SOFT, 0xFFF7C6C0.toInt(), C.RED_INK, C.RED_INK) else ui.tile("In negozio", n(info.stock), "pz"), true)
+            val stockLabel = if (rep?.status == "open") "Contati" else "In negozio"
+            add(if (empty) ui.tile(stockLabel, "0", "pz", C.RED_SOFT, 0xFFF7C6C0.toInt(), C.RED_INK, C.RED_INK) else ui.tile(stockLabel, n(info.stock), "pz"), true)
             add(ui.tile("Venduti 30g", n(info.sold30), "pz"), false)
             add(ui.tile("In arrivo", n(info.transitBoxes ?: 0.0), colli((info.transitBoxes ?: 0.0).toInt()), fg = if ((info.transitBoxes ?: 0.0) > 0) C.BLUE else C.INK), false)
             add(when {
@@ -650,6 +655,7 @@ class MainActivity : Activity() {
                 }
                 body.addView(pr, ui.lp(top = 8))
             }
+            stockCheck(body, target, v.item?.name ?: v.substitute?.name ?: "", sysInfo, rep)
         }
 
         // things worth knowing before ordering
@@ -726,6 +732,278 @@ class MainActivity : Activity() {
         }
         root.addView(bar)
         show(root, Screen.RESULT)
+    }
+
+    // ================================================================== stock errors
+    /** Under the store's numbers: the state of a stock report, or "the stock looks wrong", or a quiet way to report it. */
+    private fun stockCheck(body: LinearLayout, ean: String, name: String, sys: StoreInfo?, rep: StockReport?) {
+        sys ?: return
+        val c = ui.col(14)
+        val recount = { showCount(ean, name, sys) }
+        when {
+            rep?.status == "open" -> {
+                c.background = ui.bg(C.BLUE_SOFT, 14, 0xFFC6D5FF.toInt())
+                c.addView(ui.text("Giacenza segnalata · in attesa dell'ufficio", 14f, C.BLUE_INK, ui.bold))
+                c.addView(ui.text("Contati ${rep.counted} pz da ${rep.countedBy} · a sistema ${n(rep.systemQty)} pz · " + dayTime(rep.createdAt, false), 12f, C.BLUE_INK), ui.lp(top = 4))
+            }
+            rep?.status == "fixed" -> {
+                c.background = ui.bg(C.GREEN_SOFT, 14)
+                c.addView(ui.text("✓ Giacenza corretta dall'ufficio acquisti", 14f, C.GREEN_INK, ui.bold))
+                c.addView(ui.text("Era ${n(rep.systemQty)} pz, contati ${rep.counted} pz" + (if (rep.answer.isNotEmpty()) " · ${rep.answer}" else ""), 12f, C.GREEN_INK), ui.lp(top = 4))
+            }
+            rep?.status == "rejected" -> {
+                c.background = ui.bg(C.RED_BG, 14, 0xFFF7C6C0.toInt())
+                c.addView(ui.text("Segnalazione respinta", 14f, C.RED_INK, ui.bold))
+                c.addView(ui.text(rep.answer.ifEmpty { "Chiedi all'ufficio acquisti" }, 12f, C.RED_INK), ui.lp(top = 4))
+                c.addView(ui.button("Conta di nuovo", 0, C.RED_INK, C.RED, 14f) { recount() }, ui.lp(h = ui.dp(42), top = 10))
+            }
+            sys.suspect && (sys.stock ?: 0.0) > 0 -> {
+                c.background = ui.bg(C.AMBER_SOFT, 14, C.AMBER_LINE)
+                c.addView(ui.text("! Giacenza da verificare", 14f, C.AMBER_INK, ui.bold))
+                val d = sys.lastSaleDays
+                c.addView(ui.text("A sistema ${n(sys.stock)} pz, ma " + (if (d != null) "nessuna vendita da $d giorni" else "non si vende da molto") +
+                    ". Guarda sullo scaffale e in magazzino.", 12f, C.AMBER_INK), ui.lp(top = 4))
+                c.addView(ui.button("Conta e segnala", 0, C.AMBER_INK, C.AMBER, 14f) { recount() }, ui.lp(h = ui.dp(42), top = 10))
+            }
+            else -> {
+                val r = ui.row()
+                r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+                r.addView(ui.button("Giacenza sbagliata?", 0, C.MUTED, size = 13f) { recount() }.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) },
+                    ui.lp(w = ui.WRAP, h = ui.dp(36)))
+                body.addView(r, ui.lp(top = 8))
+                return
+            }
+        }
+        if (rep?.status == "open" || rep?.status == "fixed") {
+            val r = ui.row()
+            r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+            r.addView(ui.text("Conta di nuovo", 12f, if (rep.status == "open") C.BLUE_INK else C.GREEN_INK, ui.bold).apply {
+                setPadding(0, ui.dp(8), 0, 0)
+                setOnClickListener { recount() }
+            })
+            c.addView(r)
+        }
+        body.addView(c, ui.lp(top = 8))
+    }
+
+    /**
+     * Count the real stock: pieces on the shelf + in the back room, who counted, both places ticked; then a
+     * warning that the purchasing office will correct the stock, confirmed by holding the button.
+     */
+    private fun showCount(ean: String, name: String, sys: StoreInfo) {
+        var counted = 0
+        var shelf = false
+        var backroom = false
+        val pack = sys.pack?.takeIf { it > 0 }?.toInt()
+        val root = page()
+        root.addView(topBar(back = true))
+        val body = ui.col()
+        body.setPadding(ui.dp(18), ui.dp(16), ui.dp(18), ui.dp(16))
+        body.addView(ui.text("CONTA LA GIACENZA", 12f, C.MUTED, ui.bold))
+        body.addView(ui.text(name.ifEmpty { ean }, 17f, C.INK, ui.bold), ui.lp(top = 4))
+        body.addView(ui.num("$ean · a sistema ${n(sys.stock)} pz", 12f, C.MUTED), ui.lp(top = 3))
+
+        val numView = ui.num("0", 52f)
+        val diff = ui.text("", 13f, C.MUTED)
+        val nameEdit = EditText(this)
+        lateinit var send: TextView
+        lateinit var shelfBox: TextView
+        lateinit var backBox: TextView
+        fun ready() = shelf && backroom && nameEdit.text.toString().trim().length >= 2 && counted.toDouble() != Math.round(sys.stock ?: -1.0).toDouble()
+        fun refresh() {
+            numView.text = "$counted"
+            val d = counted - (sys.stock ?: 0.0)
+            diff.text = when {
+                d == 0.0 -> "Uguale al sistema: niente da segnalare"
+                d < 0 -> "${n(-d)} pz in meno del sistema"
+                else -> "${n(d)} pz in più del sistema"
+            }
+            diff.setTextColor(if (d == 0.0) C.MUTED else if (d < 0) C.RED_INK else C.BLUE_INK)
+            for ((box, on) in listOf(shelfBox to shelf, backBox to backroom)) {
+                box.text = if (on) "✓" else ""
+                box.background = if (on) ui.bg(C.NAVY, 6) else ui.bg(C.CARD, 6, C.LINE2, 2)
+            }
+            send.alpha = if (ready()) 1f else 0.45f
+        }
+
+        val card = ui.col(16)
+        card.background = ui.bg(C.CARD, 18, C.LINE)
+        card.addView(ui.text("Quanti pezzi ci sono davvero?", 14f, C.INK, ui.bold))
+        card.addView(ui.text("Pezzi, non colli" + (if (pack != null) " · 1 collo = $pack pz" else ""), 12f, C.MUTED), ui.lp(top = 2))
+        val r = ui.row()
+        r.addView(ui.button("−", 0xFFF3F5F9.toInt(), C.INK, C.LINE2, 30f) { if (counted > 0) { counted -= 1; refresh() } }, ui.fixed(64, 64))
+        numView.gravity = Gravity.CENTER
+        r.addView(numView, ui.lp(w = 0, weight = 1f))
+        r.addView(ui.button("+", C.NAVY, size = 30f) { counted += 1; refresh() }, ui.fixed(64, 64))
+        card.addView(r, ui.lp(top = 12))
+        val quick = ui.row()
+        quick.addView(ui.button("Nessuno · 0", C.RED_SOFT, C.RED_INK, size = 14f) { counted = 0; refresh() }, ui.lp(w = 0, h = ui.dp(40), weight = 1f))
+        if (pack != null && pack > 1) quick.addView(ui.button("+1 collo ($pack)", C.CANVAS, C.INK, C.LINE2, 14f) { counted += pack; refresh() }, ui.lp(w = 0, h = ui.dp(40), weight = 1f, start = 8))
+        card.addView(quick, ui.lp(top = 12))
+        card.addView(diff.apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
+        body.addView(card, ui.lp(top = 14))
+
+        fun check(label: String, sub: String, onClick: () -> Unit): Pair<View, TextView> {
+            val row = ui.row()
+            row.background = ui.bg(C.CARD, 14, C.LINE)
+            row.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
+            val box = ui.text("", 16f, Color.WHITE, ui.bold).apply { gravity = Gravity.CENTER }
+            row.addView(box, ui.fixed(26, 26))
+            val t = ui.col()
+            t.addView(ui.text(label, 14f, C.INK, ui.bold))
+            t.addView(ui.text(sub, 12f, C.MUTED), ui.lp(top = 2))
+            row.addView(t, ui.lp(w = 0, weight = 1f, start = 12))
+            row.setOnClickListener { onClick() }
+            return row to box
+        }
+        val (s1, b1) = check("Ho contato lo scaffale", "Anche dietro e in alto") { shelf = !shelf; refresh() }
+        val (s2, b2) = check("Ho controllato il magazzino", "Retro, scatoloni aperti, esposizioni") { backroom = !backroom; refresh() }
+        shelfBox = b1
+        backBox = b2
+        body.addView(s1, ui.lp(top = 12))
+        body.addView(s2, ui.lp(top = 8))
+
+        body.addView(ui.text("Chi ha contato", 12f, C.MUTED, ui.bold), ui.lp(top = 14))
+        nameEdit.apply {
+            setText(api.counter)
+            hint = "Nome e cognome"
+            setSingleLine()
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            background = ui.bg(C.CARD, 12, C.LINE2)
+            setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun afterTextChanged(s: android.text.Editable?) { refresh() }
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+        }
+        body.addView(nameEdit, ui.lp(top = 4))
+        root.addView(scroll(body), ui.lp(h = 0, weight = 1f))
+
+        val bar = bottomBar()
+        send = ui.button("Segnala la giacenza", C.RED) {
+            if (!ready()) {
+                val why = when {
+                    counted.toDouble() == Math.round(sys.stock ?: -1.0).toDouble() -> "Il conteggio è uguale al sistema: niente da segnalare."
+                    !shelf || !backroom -> "Prima controlla scaffale e magazzino, poi spunta tutte e due."
+                    else -> "Scrivi chi ha contato."
+                }
+                AlertDialog.Builder(this).setMessage(why).setPositiveButton("OK", null).show()
+                return@button
+            }
+            hideKeyboard(nameEdit)
+            confirmStock(ean, name, sys, counted, nameEdit.text.toString().trim())
+        }
+        bar.addView(send, ui.lp(h = ui.dp(54)))
+        bar.addView(ui.text("L'ufficio acquisti corregge la giacenza nel gestionale", 12f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 8))
+        root.addView(bar)
+        refresh()
+        show(root, Screen.COUNT)
+    }
+
+    /** Last warning: what will change, confirmed by holding the button for 2 seconds (no accidental taps). */
+    private fun confirmStock(ean: String, name: String, sys: StoreInfo, counted: Int, by: String) {
+        val dlg = Dialog(this)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val c = ui.col()
+        c.background = ui.bg(C.CARD, 22)
+        c.setPadding(ui.dp(20), ui.dp(20), ui.dp(20), ui.dp(18))
+        c.addView(ui.badge("!", C.RED_SOFT, C.RED_INK, 52, 26f))
+        c.addView(ui.text("Sei sicuro?", 22f, C.INK, ui.bold), ui.lp(top = 12))
+        c.addView(ui.text("L'ufficio acquisti correggerà la giacenza di $store", 14f, C.MUTED), ui.lp(top = 6))
+        val box = ui.row()
+        box.background = ui.bg(C.CANVAS, 14)
+        box.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
+        box.addView(ui.num(n(sys.stock), 28f, C.FAINT).apply { ui.struck(this) })
+        box.addView(ui.text("  →  ", 20f, C.MUTED, ui.bold))
+        box.addView(ui.num("$counted", 28f, C.RED_INK))
+        box.addView(ui.text(" pz", 14f, C.MUTED), ui.lp(w = ui.WRAP))
+        c.addView(box, ui.lp(top = 12))
+        c.addView(ui.text(name.ifEmpty { ean }, 13f, C.INK, ui.medium), ui.lp(top = 8))
+        c.addView(ui.text("Contato da $by · scaffale e magazzino", 12f, C.MUTED), ui.lp(top = 2))
+        c.addView(ui.text("Se il conteggio è sbagliato, gli ordini del negozio saranno sbagliati.", 13f, C.RED_INK, ui.medium), ui.lp(top = 12))
+
+        // hold to confirm
+        val hold = FrameLayout(this)
+        hold.background = ui.bg(C.RED, 14)
+        val fill = View(this)
+        fill.background = ui.bg(0xFF8F1D14.toInt(), 14)
+        fill.pivotX = 0f
+        fill.scaleX = 0f
+        hold.addView(fill, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val label = ui.text("Tieni premuto per confermare", 16f, Color.WHITE, ui.bold).apply { gravity = Gravity.CENTER }
+        hold.addView(label, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        hold.contentDescription = "Tieni premuto per confermare la segnalazione"
+        var anim: ValueAnimator? = null
+        var sent = false
+        @Suppress("ClickableViewAccessibility")
+        hold.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    if (sent) return@setOnTouchListener true
+                    anim = ValueAnimator.ofFloat(fill.scaleX, 1f).apply {
+                        duration = (2000 * (1f - fill.scaleX)).toLong().coerceAtLeast(1)
+                        addUpdateListener { fill.scaleX = it.animatedValue as Float }
+                        addListener(object : android.animation.AnimatorListenerAdapter() {
+                            override fun onAnimationEnd(a: android.animation.Animator) {
+                                if (fill.scaleX >= 0.999f && !sent) {
+                                    sent = true
+                                    label.text = "Invio in corso…"
+                                    vibrate()
+                                    sendStock(dlg, ean, name, sys, counted, by)
+                                }
+                            }
+                        })
+                        start()
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (!sent) {
+                        anim?.cancel()
+                        fill.animate().scaleX(0f).setDuration(200).start()
+                    }
+                }
+            }
+            true
+        }
+        c.addView(hold, ui.lp(h = ui.dp(56), top = 16))
+        c.addView(ui.button("Annulla", 0, C.INK, size = 15f) { dlg.dismiss() }, ui.lp(h = ui.dp(48), top = 10))
+        dlg.setContentView(c)
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            w.setLayout((resources.displayMetrics.widthPixels * 0.92).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+            w.setDimAmount(0.65f)
+        }
+        dlg.show()
+    }
+
+    private fun sendStock(dlg: Dialog, ean: String, name: String, sys: StoreInfo, counted: Int, by: String) {
+        api.counter = by
+        io.execute {
+            val r = runCatching {
+                api.reportStock(ean, name, sys.stock, counted, by)
+                api.fetchList()
+            }
+            main.post {
+                dlg.dismiss()
+                val e = r.exceptionOrNull()
+                when {
+                    e == null -> {
+                        list.applied(r.getOrThrow(), emptyList())
+                        beep(Kind.ORDER)
+                        AlertDialog.Builder(this).setTitle("Segnalazione inviata")
+                            .setMessage("Grazie. L'ufficio acquisti correggerà la giacenza; vedrai qui quando è fatto.")
+                            .setPositiveButton("OK", null).show()
+                        if (pending != null) showResult() else showHome()
+                    }
+                    e is ApiError && e.status == 401 -> unpaired()
+                    else -> AlertDialog.Builder(this).setTitle("Non inviata")
+                        .setMessage(if (e is ApiError) (e.message ?: e.code) else "Serve la connessione: riprova quando c'è il Wi-Fi.")
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        }
     }
 
     private fun packText(info: StoreInfo?): String = info?.pack?.takeIf { it > 0 }?.let { " · ${n(it)} pz/collo" } ?: ""

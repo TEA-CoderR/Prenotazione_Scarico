@@ -32,6 +32,21 @@ data class ListState(
     val feedback: Feedback? = null,
 )
 
+/** A stock error the store reported (counted on the shelf + back room vs what the system says). */
+data class StockReport(
+    val id: Int,
+    val ean: String,
+    val name: String,
+    val systemQty: Double?,
+    val counted: Int,
+    val countedBy: String,
+    /** open (waiting for the purchasing office) · fixed (stock corrected) · rejected (see answer) */
+    val status: String,
+    val answer: String,
+    val createdAt: Long,
+    val handledAt: Long,
+)
+
 data class ServerView(
     val week: String,
     val deadline: Long,
@@ -39,6 +54,7 @@ data class ServerView(
     val previous: ListState?,
     val reminders: List<Line>,
     val fetchedAt: Long,
+    val stockReports: List<StockReport> = emptyList(),
 )
 
 class StoreList(var server: ServerView? = null, val pending: LinkedHashMap<String, Line> = LinkedHashMap()) {
@@ -52,6 +68,13 @@ class StoreList(var server: ServerView? = null, val pending: LinkedHashMap<Strin
     }
 
     fun line(ean: String): Line? = lines().firstOrNull { it.ean == ean }
+
+    /** The newest stock report of this item (open, or handled in the last 14 days); null = none. */
+    fun report(ean: String, now: Long = System.currentTimeMillis()): StockReport? =
+        server?.stockReports.orEmpty().filter { it.ean == ean }.maxByOrNull { it.createdAt }
+            ?.takeIf { it.status == "open" || now - maxOf(it.handledAt, it.createdAt) < 14L * 86_400_000 }
+
+    val openReports get() = server?.stockReports.orEmpty().count { it.status == "open" }
 
     fun set(line: Line) {
         pending[line.ean] = line

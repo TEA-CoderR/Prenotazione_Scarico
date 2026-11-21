@@ -31,6 +31,10 @@ data class StoreInfo(
     val promoPrice: Double? = null,
     val promoEnd: String = "",
     val pack: Double? = null,
+    /** Days since the last sale (null = unknown / no sale this year). */
+    val lastSaleDays: Int? = null,
+    /** The purchasing program thinks the stock may not be real (it should sell, but nothing sold for a long time). */
+    val suspect: Boolean = false,
 ) {
     /** Days the stock lasts at the last 30 days' sales (null = no sales). */
     fun coverDays(extraPieces: Double = 0.0): Int? {
