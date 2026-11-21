@@ -6,6 +6,7 @@ plugins {
 // Version from CI (run number); local builds are 1.0.0 / 1.
 def buildNo = (System.getenv("BUILD_NUMBER") ?: "1").toInteger()
 def keystore = System.getenv("SCANNER_KEYSTORE")   // path to the release keystore (CI secret), optional
+def hasKey = keystore != null && new File(keystore).exists()
 
 android {
     namespace 'it.casate.scanner'
@@ -21,7 +22,7 @@ android {
 
     signingConfigs {
         release {
-            if (keystore && file(keystore).exists()) {
+            if (hasKey) {
                 storeFile file(keystore)
                 storePassword System.getenv("SCANNER_KEYSTORE_PASSWORD")
                 keyAlias 'casate-scanner'
@@ -33,7 +34,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig (keystore && file(keystore).exists()) ? signingConfigs.release : signingConfigs.debug
+            signingConfig = hasKey ? signingConfigs.release : signingConfigs.debug
         }
     }
 
