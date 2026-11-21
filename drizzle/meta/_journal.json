@@ -36,6 +36,13 @@
       "when": 1795248000000,
       "tag": "0004_refused",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795334400000,
+      "tag": "0005_scanner",
+      "breakpoints": true
     }
   ]
 }
