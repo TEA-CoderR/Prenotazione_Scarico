@@ -14,7 +14,8 @@ class Api(private val ctx: Context) {
     private val prefs = ctx.getSharedPreferences("scanner", Context.MODE_PRIVATE)
 
     var baseUrl: String
-        get() = prefs.getString("url", DEFAULT_URL) ?: DEFAULT_URL
+        // the first builds had a wrong default (casa-te.top): a saved old address is corrected on read
+        get() = (prefs.getString("url", DEFAULT_URL) ?: DEFAULT_URL).replace("casa-te.top", "casaete.top")
         set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
     var token: String?
         get() = prefs.getString("token", null)
@@ -146,7 +147,7 @@ class Api(private val ctx: Context) {
     }
 
     companion object {
-        const val DEFAULT_URL = "https://prenota.casa-te.top"
+        const val DEFAULT_URL = "https://prenota.casaete.top"
         val STORES = mapOf(0 to "BMS", 1 to "FOIANO", 2 to "MARLIA", 3 to "S.FILIPPO", 4 to "S.MARCO", 5 to "S.CONCORDIO")
 
         private fun time(s: String?): Long =
