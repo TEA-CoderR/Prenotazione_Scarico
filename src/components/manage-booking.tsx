@@ -33,6 +33,7 @@ const STATUS_STYLE: Record<BookingStatus, string> = {
   rejected: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
   cancelled: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
   no_show: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
+  refused: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
 };
 
 export function ManageBooking() {

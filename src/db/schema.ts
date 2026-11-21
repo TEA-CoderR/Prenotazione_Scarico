@@ -27,6 +27,7 @@ export const bookingStatus = pgEnum("booking_status", [
   "unloading",
   "completed",
   "no_show",
+  "refused",
 ]);
 export const vehicleType = pgEnum("vehicle_type", ["parcel", "van", "truck", "semi"]);
 export const userRole = pgEnum("user_role", ["warehouse_clerk", "warehouse_manager", "admin"]);

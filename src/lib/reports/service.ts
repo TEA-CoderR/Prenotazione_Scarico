@@ -200,7 +200,7 @@ export interface Report {
 }
 
 export function computeReport(rows: ReportRow[], from: string, to: string): Report {
-  const statuses: BookingStatus[] = ["requested", "confirmed", "rejected", "cancelled", "arrived", "unloading", "completed", "no_show"];
+  const statuses: BookingStatus[] = ["requested", "confirmed", "rejected", "cancelled", "arrived", "unloading", "completed", "no_show", "refused"];
   const byStatus = Object.fromEntries(statuses.map((s) => [s, 0])) as Record<BookingStatus, number>;
   for (const r of rows) byStatus[r.status]++;
   const slotRows = rows.filter(tookSlot);
@@ -333,6 +333,7 @@ const STATUS_IT: Record<BookingStatus, string> = {
   unloading: "In scarico",
   completed: "Completata",
   no_show: "Non presentato",
+  refused: "Respinta allo scarico",
 };
 const VEHICLE_IT: Record<VehicleType, string> = { parcel: "Corriere / colli", van: "Furgone", truck: "Motrice", semi: "Bilico" };
 

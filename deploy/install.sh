@@ -57,6 +57,7 @@ fi
 # .env files from older versions: add the publishing mode.
 grep -q '^COMPOSE_PROFILES=' .env || { [ "$MODE" = caddy ] && echo "COMPOSE_PROFILES=caddy" >> .env || echo "COMPOSE_PROFILES=" >> .env; }
 grep -q '^APP_PORT=' .env || echo "APP_PORT=3010" >> .env
+grep -q '^ERP_API_TOKEN=.\+' .env || { sed -i '/^ERP_API_TOKEN=/d' .env; echo "ERP_API_TOKEN=$(openssl rand -hex 32)" >> .env; }
 MODE=$([ "$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2)" = caddy ] && echo caddy || echo external)
 DOMAIN=$(grep '^DOMAIN=' .env | cut -d= -f2)
 APP_PORT=$(grep '^APP_PORT=' .env | cut -d= -f2)
@@ -102,4 +103,5 @@ if [ "$MODE" = external ]; then
   echo "  deploy/nginx-prenota.conf  (set server_name $DOMAIN and the certificate paths)"
   curl -fsS "http://127.0.0.1:$APP_PORT/api/health" >/dev/null && echo "Local check OK: http://127.0.0.1:$APP_PORT/api/health"
 fi
+echo "Key for the purchasing program (系统设置 → 预约平台): $(grep '^ERP_API_TOKEN=' .env | cut -d= -f2)"
 say "Done: https://$DOMAIN (carriers) · https://$DOMAIN/magazzino (staff)"
