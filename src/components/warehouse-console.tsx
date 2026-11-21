@@ -26,6 +26,7 @@ const STATUS_STYLE: Record<BookingStatus, string> = {
   rejected: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
   cancelled: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   no_show: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
+  refused: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
 };
 
 const ACTION_ERRORS: Record<string, string> = {
@@ -327,7 +328,7 @@ export function WarehouseConsole() {
         <p className="text-sm text-slate-500">
           Scarichi: {board.day.filter((b) => !["rejected", "cancelled"].includes(b.status)).length} · Completati:{" "}
           {board.day.filter((b) => b.status === "completed").length} · Pallet:{" "}
-          {board.day.reduce((n, b) => n + (["rejected", "cancelled", "no_show"].includes(b.status) ? 0 : b.pallets), 0)}
+          {board.day.reduce((n, b) => n + (["rejected", "cancelled", "no_show", "refused"].includes(b.status) ? 0 : b.pallets), 0)}
         </p>
       )}
 
@@ -387,7 +388,7 @@ function BookingCard(props: {
   const [note, setNote] = useState("");
   const vehicle = t.vehicles[b.vehicleType as keyof typeof t.vehicles]?.name ?? b.vehicleType;
   const load = b.vehicleType === "parcel" ? `${b.parcels} colli` : `${b.pallets} pallet`;
-  const closed = ["completed", "rejected", "cancelled", "no_show"].includes(b.status);
+  const closed = ["completed", "rejected", "cancelled", "no_show", "refused"].includes(b.status);
 
   const details: [string, ReactNode][] = [
     ["Trasportatore", b.carrierName],

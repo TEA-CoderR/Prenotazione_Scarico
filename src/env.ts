@@ -13,6 +13,8 @@ const schema = z.object({
   // Cloudflare Turnstile (captcha on the booking form). Both empty = no captcha (development).
   TURNSTILE_SITE_KEY: z.string().optional(),
   TURNSTILE_SECRET_KEY: z.string().optional(),
+  // Key of the purchasing program (CASA&TE 采购系统) for /api/erp/*. Empty = that API is off.
+  ERP_API_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

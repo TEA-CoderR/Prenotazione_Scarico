@@ -70,6 +70,31 @@ export const createBookingSchema = loadSchema.extend({
 
 export type CreateBookingInput = z.input<typeof createBookingSchema>;
 
+/**
+ * Booking entered by the purchasing office (phone bookings, or a time chosen while
+ * registering the shipment in the purchasing program): the carrier's e-mail is optional.
+ */
+export const staffBookingSchema = createBookingSchema.extend({
+  contactEmail: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .optional()
+    .transform((v) => v || "")
+    .pipe(z.union([z.literal(""), z.email()])),
+});
+
+/** Who enters a booking on the carrier's behalf. Their booking is confirmed at once and may be for today. */
+export interface StaffEntry {
+  by: string;
+}
+
+/** Staff may book any time still ahead, ignoring the carriers' window and cutoff (up to maxDaysAhead). */
+function staffDateOk(date: string, now: Date, ctx: SiteContext): boolean {
+  const today = localDate(now, ctx.tz);
+  return date >= today && date <= addDays(today, Math.max(ctx.policy.maxDaysAhead, 60));
+}
+
 interface SiteContext {
   entityId: number;
   entityCode: number;
@@ -190,11 +215,13 @@ export async function getAvailability(
   db: Db,
   params: { entityCode: number; date: string } & z.input<typeof loadSchema>,
   now: Date = new Date(),
+  opts: { staff?: boolean } = {},
 ): Promise<AvailabilityResult> {
   const load = loadSchema.parse(params);
   const ctx = await loadSiteContext(db, params.entityCode);
   const durationMin = durationOrThrow(ctx, load);
-  if (!isDateBookable(params.date, now, ctx.tz, ctx.policy)) {
+  const dateOk = opts.staff ? staffDateOk(params.date, now, ctx) : isDateBookable(params.date, now, ctx.tz, ctx.policy);
+  if (!dateOk) {
     return { date: params.date, durationMin, slots: [] };
   }
   const opening = await openingFor(db, ctx, params.date);
@@ -206,7 +233,9 @@ export async function getAvailability(
     const free = freeSlotsForDock({ date: params.date, tz: ctx.tz, opening, durationMin, busy: busy.get(dockId) ?? [] });
     for (const s of free) byStart.set(s.start.getTime(), s);
   }
-  const slots = [...byStart.values()].sort((a, b) => a.start.getTime() - b.start.getTime());
+  const slots = [...byStart.values()]
+    .filter((s) => !opts.staff || s.start.getTime() > now.getTime())
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
   return { date: params.date, durationMin, slots };
 }
 
@@ -242,9 +271,9 @@ export interface CreatedBooking {
 export async function createBooking(
   db: Db,
   rawInput: CreateBookingInput,
-  opts: { now?: Date; orderValidator?: OrderValidator } = {},
+  opts: { now?: Date; orderValidator?: OrderValidator; staff?: StaffEntry } = {},
 ): Promise<CreatedBooking> {
-  const parsed = createBookingSchema.safeParse(rawInput);
+  const parsed = (opts.staff ? staffBookingSchema : createBookingSchema).safeParse(rawInput);
   if (!parsed.success) throw new BookingError("VALIDATION", z.prettifyError(parsed.error));
   const input = parsed.data;
   const now = opts.now ?? new Date();
@@ -252,7 +281,8 @@ export async function createBooking(
 
   const ctx = await loadSiteContext(db, input.entityCode);
   const durationMin = durationOrThrow(ctx, input);
-  if (!isDateBookable(input.date, now, ctx.tz, ctx.policy)) {
+  const dateOk = opts.staff ? staffDateOk(input.date, now, ctx) : isDateBookable(input.date, now, ctx.tz, ctx.policy);
+  if (!dateOk) {
     throw new BookingError("DATE_NOT_BOOKABLE", `${input.date} is outside the booking window`);
   }
   const opening = await openingFor(db, ctx, input.date);
@@ -260,6 +290,10 @@ export async function createBooking(
 
   const startAt = zonedToUtc(input.date, input.time, ctx.tz);
   const endAt = new Date(startAt.getTime() + durationMin * 60000);
+  if (opts.staff && startAt.getTime() <= now.getTime()) {
+    throw new BookingError("DATE_NOT_BOOKABLE", "This time has already passed");
+  }
+  const status: BookingStatus = opts.staff ? "confirmed" : "requested";
 
   // Docks where this exact start is a valid, currently free slot.
   const busy = await busyByDock(db, ctx, input.date);
@@ -308,7 +342,7 @@ export async function createBooking(
                 dockId,
                 startAt,
                 endAt,
-                status: "requested",
+                status,
                 carrierName: input.carrierName,
                 contactEmail: input.contactEmail,
                 driverName: input.driverName,
@@ -330,8 +364,9 @@ export async function createBooking(
             await sp.insert(bookingEvent).values({
               bookingId: row.id,
               fromStatus: null,
-              toStatus: "requested",
-              actorType: "carrier",
+              toStatus: status,
+              actorType: opts.staff ? "system" : "carrier",
+              note: opts.staff ? `Ufficio acquisti · ${opts.staff.by}`.slice(0, 500) : null,
               createdAt: now,
             });
             return row;
@@ -358,13 +393,17 @@ export async function createBooking(
   });
 }
 
-/** Allowed status changes. Rescheduling is a cancel + new request (it needs re-confirmation). */
+/**
+ * Allowed status changes. Rescheduling is a cancel + new request (it needs re-confirmation).
+ * "refused": the delivery came but was not accepted at the dock (damaged, wrong goods…); the reason is an incident.
+ */
 export const TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   requested: ["confirmed", "rejected", "cancelled"],
-  confirmed: ["arrived", "cancelled", "no_show"],
-  arrived: ["unloading"],
-  unloading: ["completed"],
+  confirmed: ["arrived", "cancelled", "no_show", "refused"],
+  arrived: ["unloading", "refused"],
+  unloading: ["completed", "refused"],
   completed: [],
+  refused: [],
   rejected: [],
   cancelled: [],
   no_show: [],

@@ -4,6 +4,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 git pull --ff-only
+# Key for the purchasing program (CASA&TE 采购系统): created once, shown once.
+if ! grep -q '^ERP_API_TOKEN=.\+' .env; then
+  sed -i '/^ERP_API_TOKEN=/d' .env
+  echo "ERP_API_TOKEN=$(openssl rand -hex 32)" >> .env
+  echo "Key for the purchasing program (系统设置 → 预约平台), also in .env as ERP_API_TOKEN:"
+  grep '^ERP_API_TOKEN=' .env | cut -d= -f2
+fi
 docker compose up -d --build
 docker image prune -f >/dev/null
 for i in $(seq 1 60); do
