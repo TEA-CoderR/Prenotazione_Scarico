@@ -9,7 +9,7 @@ import java.net.URL
 
 class ApiError(val status: Int, val code: String, message: String) : Exception(message)
 
-/** Talks to the booking platform server (/api/scanner/*) and keeps the device key and the catalog on the device. */
+/** Talks to the booking platform server (/api/scanner/...) and keeps the device key and the catalog on the device. */
 class Api(private val ctx: Context) {
     private val prefs = ctx.getSharedPreferences("scanner", Context.MODE_PRIVATE)
 
