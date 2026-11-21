@@ -128,15 +128,19 @@ export async function deviceFor(db: Db, token: string | null | undefined, now = 
 /**
  * Catalog payload (compact, as the app reads it):
  *  { week, publishedAt, sources: [wholesaler names], directs: [direct supplier names],
- *    items: [[ean, name, griglia, wholesalerIdx[], cheapestPrice|null, substituteEan, substituteName, directIdx|-1]] }
- * griglia: 0 = not in the DETERSIVO Griglia, 1 = in the Griglia, 2 = in the Griglia but discontinued (crossed out)
+ *    items: [[ean, name, griglia, wholesalerIdx[], substituteEan, substituteName, directIdx|-1]],
+ *    stores: { "<entity code>": [[ean, stock, sold30, inTransitBoxes, suggestedBoxes, cost, price, promoPrice, promoEnd, pack]] } }
+ * griglia: 0 = not in the DETERSIVO Griglia, 1 = in the Griglia, 2 = in the Griglia but discontinued (crossed out).
+ * A scanner downloads `items` plus only its own store's rows (as `store`, see catalogFor).
  */
 export const partSchema = z.object({
   upload: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
   part: z.number().int().min(1).max(200),
   parts: z.number().int().min(1).max(200),
   meta: z.record(z.string(), z.unknown()).optional(),
-  items: z.array(z.array(z.unknown()).min(3).max(12)).max(20_000),
+  /** Set on parts that carry one store's own data (stock, sales, prices…) instead of catalog items. */
+  store: z.number().int().min(0).max(99).optional(),
+  items: z.array(z.array(z.unknown()).min(2).max(16)).max(20_000),
 });
 
 /**
@@ -154,8 +158,11 @@ export async function putCatalogPart(db: Db, raw: z.input<typeof partSchema>, by
     await tx.delete(catalogPart).where(lt(catalogPart.createdAt, new Date(now.getTime() - 86_400_000)));
     await tx
       .insert(catalogPart)
-      .values({ uploadId: p.upload, part: p.part, parts: p.parts, payload: { meta: p.meta ?? null, items: p.items }, createdAt: now })
-      .onConflictDoUpdate({ target: [catalogPart.uploadId, catalogPart.part], set: { payload: { meta: p.meta ?? null, items: p.items } } });
+      .values({ uploadId: p.upload, part: p.part, parts: p.parts, payload: { meta: p.meta ?? null, store: p.store ?? null, items: p.items }, createdAt: now })
+      .onConflictDoUpdate({
+        target: [catalogPart.uploadId, catalogPart.part],
+        set: { payload: { meta: p.meta ?? null, store: p.store ?? null, items: p.items } },
+      });
     // Serialise the "is it complete?" check per upload.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${p.upload}))`);
     const got = await tx
@@ -165,13 +172,15 @@ export async function putCatalogPart(db: Db, raw: z.input<typeof partSchema>, by
       .orderBy(catalogPart.part);
     if (got.length < p.parts) return { complete: false as const, received: got.length };
     const items: unknown[] = [];
+    const stores: Record<string, unknown[]> = {};
     let meta: Record<string, unknown> = {};
     for (const g of got) {
-      const pl = g.payload as { meta: Record<string, unknown> | null; items: unknown[] };
+      const pl = g.payload as { meta: Record<string, unknown> | null; store?: number | null; items: unknown[] };
       if (g.part === 1 && pl.meta) meta = pl.meta;
-      items.push(...pl.items);
+      if (pl.store != null) (stores[String(pl.store)] ??= []).push(...pl.items);
+      else items.push(...pl.items);
     }
-    const payload = { ...meta, publishedAt: now.toISOString(), items };
+    const payload = { ...meta, publishedAt: now.toISOString(), items, stores };
     const [snap] = await tx
       .insert(catalogSnapshot)
       .values({ createdBy: by, itemCount: items.length, payload, createdAt: now })
@@ -194,6 +203,12 @@ export async function latestCatalogInfo(db: Db) {
     .orderBy(desc(catalogSnapshot.id))
     .limit(1);
   return s ?? null;
+}
+
+/** What one scanner downloads: the catalog plus only its own store's data (as `store`). */
+export function catalogFor(payload: unknown, entityCode: number | null) {
+  const { stores, ...rest } = (payload ?? {}) as { stores?: Record<string, unknown[]> } & Record<string, unknown>;
+  return { ...rest, store: (entityCode != null && stores?.[String(entityCode)]) || [] };
 }
 
 export async function latestCatalog(db: Db) {
