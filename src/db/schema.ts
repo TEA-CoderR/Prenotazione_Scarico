@@ -16,6 +16,7 @@ import {
   text,
   time,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 export const bookingStatus = pgEnum("booking_status", [
@@ -269,4 +270,48 @@ export const catalogPart = pgTable(
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.uploadId, t.part] })],
+);
+
+export const appSetting = pgTable("app_setting", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: tstz("updated_at").notNull().defaultNow(),
+});
+
+export const storeList = pgTable(
+  "store_list",
+  {
+    id: serial("id").primaryKey(),
+    entityCode: smallint("entity_code").notNull(),
+    week: date("week", { mode: "string" }).notNull(),
+    deadline: tstz("deadline").notNull(),
+    status: text("status").notNull().default("draft"),
+    submittedAt: tstz("submitted_at"),
+    submittedBy: text("submitted_by"),
+    receivedAt: tstz("received_at"),
+    feedback: jsonb("feedback"),
+    feedbackAt: tstz("feedback_at"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.entityCode, t.week)],
+);
+
+export const storeListLine = pgTable(
+  "store_list_line",
+  {
+    listId: integer("list_id")
+      .notNull()
+      .references(() => storeList.id, { onDelete: "cascade" }),
+    ean: text("ean").notNull(),
+    name: text("name").notNull().default(""),
+    boxes: integer("boxes").notNull().default(0),
+    kind: text("kind").notNull().default("griglia"),
+    reason: text("reason"),
+    origEan: text("orig_ean"),
+    origName: text("orig_name"),
+    updatedBy: text("updated_by"),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.listId, t.ean] })],
 );

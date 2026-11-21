@@ -5,6 +5,7 @@ import { runMigrations } from "@/db/migrate";
 import { seed } from "@/db/seed";
 import { BookingError } from "@/lib/booking/errors";
 import {
+  catalogFor,
   createDevice,
   deviceFor,
   latestCatalog,
@@ -95,5 +96,18 @@ describe.skipIf(!url)("store scanners (PostgreSQL)", () => {
     }
     const n = await db.execute(sql`select count(*)::int as n from catalog_snapshot`);
     expect(n.rows[0].n).toBe(3);
+  });
+
+  it("keeps each store's data apart; a scanner only gets its own store", async () => {
+    const up = "up-20000001";
+    await putCatalogPart(db, { upload: up, part: 1, parts: 3, meta: { week: "48" }, items: [["1", "A", 1, [0], "", "", -1]] }, "M", NOW);
+    await putCatalogPart(db, { upload: up, part: 2, parts: 3, store: 1, items: [["1", 9, 22]] }, "M", NOW);
+    await putCatalogPart(db, { upload: up, part: 3, parts: 3, store: 2, items: [["1", 3, 5]] }, "M", NOW);
+    const c = await latestCatalog(db);
+    const foiano = catalogFor(c?.payload, 1);
+    expect(foiano).toMatchObject({ week: "48", items: [["1", "A", 1, [0], "", "", -1]], store: [["1", 9, 22]] });
+    expect(foiano).not.toHaveProperty("stores");
+    expect(catalogFor(c?.payload, 5).store).toEqual([]);
+    expect(catalogFor(c?.payload, null).store).toEqual([]);
   });
 });

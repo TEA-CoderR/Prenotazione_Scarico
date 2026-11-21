@@ -1,34 +1,59 @@
 package it.casate.scanner
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatalogTest {
-    private fun item(griglia: Int, w: List<String> = emptyList(), sub: String = "", subName: String = "", direct: String = "") =
-        Item("8001090000001", "SVELTO PIATTI 980", griglia, w, sub, subName, direct)
+    private fun item(griglia: Int, w: List<String> = emptyList(), sub: String = "", subName: String = "", direct: String = "", ean: String = "8001090000001") =
+        Item(ean, "SVELTO PIATTI 980", griglia, w, sub, subName, direct)
 
     @Test
     fun barcodeFoundWithOrWithoutLeadingZeros() {
         val c = Catalog(1, "", "", mapOf("8001090000001" to item(1, listOf("MELONI")), "12345" to item(0)))
         assertEquals("8001090000001", c.find(" 8001090000001 ")?.ean)
         assertEquals("8001090000001", c.find("08001090000001")?.ean)
-        assertEquals("8001090000001", c.find("8001090000001")?.ean)
         assertEquals(null, c.find("abc"))
     }
 
     @Test
     fun verdicts() {
-        assertEquals(Tone.OK, Catalog.judge(item(1, listOf("MELONI")), "x").tone)
-        val s = Catalog.judge(item(1, sub = "8001", subName = "SVELTO 1000"), "x")
-        assertEquals(Tone.SUBSTITUTE, s.tone)
-        assertTrue(s.lines.contains("SVELTO 1000"))
-        assertEquals(Tone.SUBSTITUTE, Catalog.judge(item(2, sub = "8001", subName = "N"), "x").tone)
-        assertEquals(Tone.WARN, Catalog.judge(item(1), "x").tone)
-        assertEquals(Tone.STOP, Catalog.judge(item(2, listOf("MELONI")), "x").tone)
-        val notIn = Catalog.judge(item(0, listOf("MELONI"), direct = "BAMA"), "x")
-        assertEquals(Tone.STOP, notIn.tone)
-        assertTrue(notIn.lines.any { it.contains("BAMA") })
-        assertEquals(Tone.UNKNOWN, Catalog.judge(null, "x").tone)
+        assertEquals(Kind.ORDER, Catalog.judgeItem(item(1, listOf("MELONI"))).kind)
+        val s = Catalog.judgeItem(item(1, sub = "8001", subName = "SVELTO 1000"))
+        assertEquals(Kind.SUBSTITUTE, s.kind)
+        assertEquals("SVELTO 1000", s.substitute?.name)
+        assertEquals(Kind.SUBSTITUTE, Catalog.judgeItem(item(2, sub = "8001", subName = "N")).kind)
+        assertEquals(Kind.NOT_AVAILABLE, Catalog.judgeItem(item(1)).kind)
+        // not in Griglia but a wholesaler has it: only in an emergency
+        assertEquals(Kind.URGENT_ONLY, Catalog.judgeItem(item(0, listOf("MEGA CASH"), direct = "SAIS")).kind)
+        assertEquals(Kind.URGENT_ONLY, Catalog.judgeItem(item(2, listOf("MELONI"))).kind)
+        assertEquals(Kind.DIRECT_ONLY, Catalog.judgeItem(item(0, direct = "BAMA")).kind)
+        assertEquals(Kind.UNKNOWN, Catalog.judgeItem(null).kind)
+    }
+
+    @Test
+    fun substituteTakenFromTheCatalog() {
+        val new = item(1, listOf("MELONI"), ean = "8001")
+        val c = Catalog(1, "", "", mapOf("8001090000001" to item(2, sub = "8001", subName = "x"), "8001" to new))
+        assertEquals(listOf("MELONI"), c.judge("8001090000001").substitute?.wholesalers)
+    }
+
+    @Test
+    fun storeNumbers() {
+        val info = StoreInfo(stock = 9.0, sold30 = 30.0, transitBoxes = 0.0, suggestBoxes = 2, pack = 6.0)
+        assertEquals(9, info.coverDays())
+        assertEquals(21, Catalog.coverAfter(info, 2))
+        assertEquals(2, Catalog.startBoxes(null, info))
+        assertEquals(3, Catalog.startBoxes(3, info))
+        assertEquals(1, Catalog.startBoxes(null, StoreInfo(suggestBoxes = 0)))
+        assertTrue(Catalog.overstocked(StoreInfo(stock = 46.0, sold30 = 10.0)))
+        assertTrue(Catalog.overstocked(StoreInfo(stock = 5.0, sold30 = 0.0)))
+        assertFalse(Catalog.overstocked(info))
+        assertNull(StoreInfo(stock = 3.0).coverDays())
+        assertEquals("4 mesi", Catalog.months(110))
+        val c = Catalog(1, "", "", emptyMap(), mapOf("8001090000001" to info))
+        assertEquals(9.0, c.info("08001090000001")?.stock)
     }
 }

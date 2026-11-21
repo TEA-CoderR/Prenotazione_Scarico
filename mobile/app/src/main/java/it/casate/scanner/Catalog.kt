@@ -1,5 +1,8 @@
 package it.casate.scanner
 
+import kotlin.math.ceil
+import kotlin.math.roundToInt
+
 /**
  * The catalog published by the purchasing program (CASA&TE 采购系统) and what a scan means for the store.
  * Pure Kotlin (no Android classes) so it can be unit-tested.
@@ -17,22 +20,64 @@ data class Item(
     val direct: String,
 )
 
-enum class Tone { OK, SUBSTITUTE, WARN, STOP, UNKNOWN }
+/** This store's numbers for an item (from the purchasing program; any of them may be missing). */
+data class StoreInfo(
+    val stock: Double? = null,
+    val sold30: Double? = null,
+    val transitBoxes: Double? = null,
+    val suggestBoxes: Int? = null,
+    val cost: Double? = null,
+    val price: Double? = null,
+    val promoPrice: Double? = null,
+    val promoEnd: String = "",
+    val pack: Double? = null,
+) {
+    /** Days the stock lasts at the last 30 days' sales (null = no sales). */
+    fun coverDays(extraPieces: Double = 0.0): Int? {
+        val s = sold30 ?: return null
+        if (s <= 0) return null
+        return (((stock ?: 0.0).coerceAtLeast(0.0) + extraPieces) / (s / 30.0)).roundToInt()
+    }
+}
 
-data class Verdict(val tone: Tone, val title: String, val lines: List<String>)
+enum class Kind {
+    /** In Griglia, a wholesaler has it this week. */
+    ORDER,
+    /** Replaced: order the substitute instead. */
+    SUBSTITUTE,
+    /** In Griglia but no wholesaler has it this week. */
+    NOT_AVAILABLE,
+    /** Not in Griglia (or taken out) but a wholesaler has it: only for emergencies, normally the direct supplier. */
+    URGENT_ONLY,
+    /** Not in Griglia, no wholesaler: only from the direct supplier (if any). */
+    DIRECT_ONLY,
+    /** Not in the catalog at all. */
+    UNKNOWN,
+}
+
+data class Verdict(val kind: Kind, val item: Item?, val substitute: Item?)
 
 class Catalog(
     val id: Int,
     val week: String,
     val publishedAt: String,
     private val items: Map<String, Item>,
+    private val store: Map<String, StoreInfo> = emptyMap(),
 ) {
     val size get() = items.size
+    val hasStoreData get() = store.isNotEmpty()
 
     fun find(scan: String): Item? {
         for (k in keys(scan)) items[k]?.let { return it }
         return null
     }
+
+    fun info(ean: String): StoreInfo? {
+        for (k in keys(ean)) store[k]?.let { return it }
+        return null
+    }
+
+    fun judge(scan: String): Verdict = judgeItem(find(scan)) { find(it) }
 
     companion object {
         /** Ways the same barcode may be written: as scanned, without leading zeros (how the catalog stores it). */
@@ -43,40 +88,46 @@ class Catalog(
             return listOf(noZeros, digits).filter { it.isNotEmpty() }.distinct()
         }
 
-        fun judge(item: Item?, scan: String): Verdict {
-            if (item == null) {
-                return Verdict(
-                    Tone.UNKNOWN, "NON IN GRIGLIA",
-                    listOf("Articolo non presente in Griglia né nei listini dei grossisti.", "Non inserirlo nella lista DETERSIVO."),
-                )
-            }
-            val subst = if (item.substituteEan.isNotEmpty()) item.substituteName.ifEmpty { item.substituteEan } else ""
+        fun judgeItem(item: Item?, lookup: (String) -> Item? = { null }): Verdict {
+            if (item == null) return Verdict(Kind.UNKNOWN, null, null)
+            val sub = if (item.substituteEan.isNotEmpty() && item.griglia != 0)
+                lookup(item.substituteEan) ?: Item(item.substituteEan, item.substituteName, 1, emptyList(), "", "", "")
+            else null
             return when {
-                item.griglia == 1 && item.wholesalers.isNotEmpty() -> Verdict(
-                    Tone.OK, "ORDINABILE",
-                    listOf("In Griglia · disponibile questa settimana", "Grossisti: " + item.wholesalers.joinToString(", ")),
-                )
-                item.griglia != 0 && subst.isNotEmpty() -> Verdict(
-                    Tone.SUBSTITUTE, "SOSTITUITO",
-                    listOf("Articolo fuori listino. Ordinare al suo posto:", subst, "EAN " + item.substituteEan),
-                )
-                item.griglia == 1 -> Verdict(
-                    Tone.WARN, "NON DISPONIBILE",
-                    listOf("In Griglia, ma questa settimana nessun grossista lo ha in listino.",
-                        if (item.direct.isNotEmpty()) "Ordinabile dal fornitore diretto: " + item.direct else "L'ufficio acquisti cerca un'alternativa."),
-                )
-                item.griglia == 2 -> Verdict(
-                    Tone.STOP, "TOLTO DALLA GRIGLIA",
-                    listOf("Articolo non più in Griglia: non ordinarlo nella lista DETERSIVO.") +
-                        (if (item.direct.isNotEmpty()) listOf("Ordinabile dal fornitore diretto: " + item.direct) else emptyList()),
-                )
-                else -> Verdict(
-                    Tone.STOP, "NON IN GRIGLIA",
-                    listOf("Non inserirlo nella lista DETERSIVO.") +
-                        (if (item.direct.isNotEmpty()) listOf("Ordinabile dal fornitore diretto: " + item.direct) else emptyList()) +
-                        (if (item.wholesalers.isNotEmpty()) listOf("(nei listini dei grossisti, ma fuori Griglia)") else emptyList()),
-                )
+                item.griglia == 1 && item.wholesalers.isNotEmpty() -> Verdict(Kind.ORDER, item, null)
+                sub != null -> Verdict(Kind.SUBSTITUTE, item, sub)
+                item.griglia == 1 -> Verdict(Kind.NOT_AVAILABLE, item, null)
+                item.wholesalers.isNotEmpty() -> Verdict(Kind.URGENT_ONLY, item, null)
+                else -> Verdict(Kind.DIRECT_ONLY, item, null)
             }
+        }
+
+        /** Boxes to start with: what is already in the list, else the suggestion, else 1. */
+        fun startBoxes(inList: Int?, info: StoreInfo?): Int = when {
+            inList != null && inList > 0 -> inList
+            (info?.suggestBoxes ?: 0) > 0 -> info!!.suggestBoxes!!
+            else -> 1
+        }
+
+        /** After ordering `boxes`, how many days the stock lasts (null = unknown). */
+        fun coverAfter(info: StoreInfo?, boxes: Int): Int? {
+            info ?: return null
+            val pack = info.pack ?: return info.coverDays()
+            val transit = (info.transitBoxes ?: 0.0) * pack
+            return info.coverDays(boxes * pack + transit)
+        }
+
+        /** Already well stocked: what is in the shop (and coming) lasts more than `days` without this order. */
+        fun overstocked(info: StoreInfo?, days: Int = 90): Boolean {
+            info ?: return false
+            val transit = (info.transitBoxes ?: 0.0) * (info.pack ?: 0.0)
+            val c = info.coverDays(transit) ?: return (info.stock ?: 0.0) > 0 && (info.sold30 ?: -1.0) == 0.0
+            return c > days
+        }
+
+        fun months(days: Int): String = when {
+            days < 45 -> "$days giorni"
+            else -> "${ceil(days / 30.0).toInt()} mesi"
         }
     }
 }
