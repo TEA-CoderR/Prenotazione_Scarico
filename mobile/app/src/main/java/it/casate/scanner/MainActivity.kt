@@ -131,7 +131,7 @@ class MainActivity : Activity() {
             Screen.RESULT -> goBack()
             Screen.LINES -> linesBack()
             Screen.REVIEW, Screen.SENT -> showHome()
-            Screen.COUNT -> showResult()
+            Screen.COUNT -> { afterStock = null; showResult() }
             else -> super.onBackPressed()
         }
     }
@@ -666,17 +666,17 @@ class MainActivity : Activity() {
         (if (v.kind == Kind.SUBSTITUTE) v.substitute?.ean else v.item?.ean) ?: (Catalog.keys(raw).firstOrNull() ?: raw)
 
     /** Puts the looked-at item in the list ("Aggiungi"); returns what to tell the store. */
-    private fun commit(): String? {
+    private fun commit(reason: String? = null): String? {
         val p = pending ?: return null
         pending = null
         val v = p.verdict
         val now = System.currentTimeMillis()
         val me = api.deviceName
         val line = when (v.kind) {
-            Kind.ORDER -> Line(v.item!!.ean, v.item.name.take(120), p.boxes, "griglia", updatedBy = me, updatedAt = now)
+            Kind.ORDER -> Line(v.item!!.ean, v.item.name.take(120), p.boxes, "griglia", reason = reason?.take(120), updatedBy = me, updatedAt = now)
             Kind.SUBSTITUTE -> {
                 val s = v.substitute!!
-                Line(s.ean, s.name.take(120), p.boxes, "sub", origEan = v.item?.ean, origName = v.item?.name?.take(120), updatedBy = me, updatedAt = now)
+                Line(s.ean, s.name.take(120), p.boxes, "sub", reason = reason?.take(120), origEan = v.item?.ean, origName = v.item?.name?.take(120), updatedBy = me, updatedAt = now)
             }
             Kind.NOT_AVAILABLE -> if (p.remind) Line(v.item!!.ean, v.item.name.take(120), 0, "remind", updatedBy = me, updatedAt = now) else null
             else -> null
@@ -915,7 +915,9 @@ class MainActivity : Activity() {
                     else -> "Aggiungi ${p.boxes} ${colli(p.boxes)}"
                 }
                 val icon = if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS
+                val ask = !inIt && needsWhy(v, info, rep)
                 r.addView(ui.iconButton(label, icon, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN) {
+                    if (ask) return@iconButton whySheet(target, item?.name ?: target, info!!, sysInfo)
                     val msg = commit()
                     if (msg != null) beep(Kind.ORDER)
                     done(msg)
@@ -1017,8 +1019,10 @@ class MainActivity : Activity() {
         lateinit var shelfBox: TextView
         lateinit var backBox: TextView
         fun ready() = shelf && backroom && nameEdit.text.toString().trim().length >= 2 && counted.toDouble() != Math.round(sys.stock ?: -1.0).toDouble()
+        var putNum: () -> Unit = {}
         fun refresh() {
             numView.text = "$counted"
+            putNum()
             val d = counted - (sys.stock ?: 0.0)
             diff.text = when {
                 d == 0.0 -> "Uguale al sistema: niente da segnalare"
@@ -1037,12 +1041,15 @@ class MainActivity : Activity() {
         card.background = ui.bg(C.CARD, 18, C.LINE)
         card.addView(ui.text("Quanti pezzi ci sono davvero?", 14f, C.INK, ui.bold))
         card.addView(ui.text("Pezzi, non colli" + (if (pack != null) " · 1 collo = $pack pz" else ""), 12f, C.MUTED), ui.lp(top = 2))
-        val r = ui.row()
-        r.addView(ui.button("−", 0xFFF3F5F9.toInt(), C.INK, C.LINE2, 30f) { if (counted > 0) { counted -= 1; refresh() } }, ui.fixed(64, 64))
-        numView.gravity = Gravity.CENTER
-        r.addView(numView, ui.lp(w = 0, weight = 1f))
-        r.addView(ui.button("+", C.NAVY, size = 30f) { counted += 1; refresh() }, ui.fixed(64, 64))
-        card.addView(r, ui.lp(top = 12))
+        // hold = faster, tap the number = type it (long shelves: 37 pz is quicker to type than to tap)
+        val numBox = FrameLayout(this)
+        fun putCounter() {
+            numBox.removeAllViews()
+            numBox.addView(counter({ counted }, { counted = it }, 0, 64, 52f, "Quanti pezzi?") { refresh() })
+        }
+        putCounter()
+        putNum = { putCounter() }
+        card.addView(numBox, ui.lp(top = 12))
         val quick = ui.row()
         quick.addView(ui.button("Nessuno · 0", C.RED_SOFT, C.RED_INK, size = 14f) { counted = 0; refresh() }, ui.lp(w = 0, h = ui.dp(40), weight = 1f))
         if (pack != null && pack > 1) quick.addView(ui.button("+1 collo ($pack)", C.CANVAS, C.INK, C.LINE2, 14f) { counted += pack; refresh() }, ui.lp(w = 0, h = ui.dp(40), weight = 1f, start = 8))
@@ -1196,6 +1203,13 @@ class MainActivity : Activity() {
                 dlg.dismiss()
                 val e = r.exceptionOrNull()
                 when {
+                    e == null && afterStock != null -> {
+                        list.applied(r.getOrThrow(), emptyList())
+                        val cb = afterStock!!
+                        afterStock = null
+                        beep(Kind.ORDER)
+                        cb(counted)
+                    }
                     e == null -> {
                         list.applied(r.getOrThrow(), emptyList())
                         beep(Kind.ORDER)
@@ -1216,32 +1230,94 @@ class MainActivity : Activity() {
     private fun packText(pack: Double?): String = pack?.takeIf { it > 0 }?.let { " · ${n(it)} pz/collo" } ?: ""
 
     /** − n colli + (big, the design's), used in the order card and in the substitute card. */
-    private fun stepRow(p: Pending, pack: Double?, size: Int, numSize: Float): View {
+    /**
+     * − n +  for any number: tap = ±1, hold = faster and faster (1 → 2 → 5 → 10 a step), tap the number =
+     * type it. `live` runs on every step (only text changes), `done` once the finger is lifted / typed.
+     */
+    private fun counter(get: () -> Int, set: (Int) -> Unit, min: Int = 0, size: Int = 64, numSize: Float = 44f,
+                        title: String = "Quanti colli?", sub: ((Int) -> String)? = null, done: () -> Unit): View {
         val r = ui.row()
-        val minus = ui.icon(Icons.MINUS, if (p.boxes > 1) C.INK else C.FAINT, size, 2.2f).apply {
-            val pd = ui.dp(size / 3)
-            setPadding(pd, pd, pd, pd)
-            background = ui.bg(0xFFF3F5F9.toInt(), 16, C.LINE2)
-            contentDescription = "Togli un collo"
+        val num = ui.num("${get()}", numSize).apply { gravity = Gravity.CENTER }
+        val subTv = sub?.let { ui.text(it(get()), 12f, C.MUTED).apply { gravity = Gravity.CENTER } }
+        fun show() {
+            num.text = "${get()}"
+            subTv?.text = sub!!(get())
         }
-        ui.tap(minus, 16) { if (p.boxes > 1) { p.boxes -= 1; showResult() } }
-        r.addView(minus, ui.fixed(size, size))
+        fun step(d: Int): Boolean {
+            val nv = (get() + d).coerceAtLeast(min)
+            if (nv == get()) return false
+            set(nv)
+            show()
+            return true
+        }
+        fun key(spec: Icons.Spec, dir: Int, fill: Int, fg: Int, desc: String): View {
+            val v = ui.icon(spec, fg, size, 2.2f).apply {
+                val pd = ui.dp(size / 3)
+                setPadding(pd, pd, pd, pd)
+                background = ui.ripple(if (fill == C.NAVY) ui.bg(C.NAVY, 16) else ui.bg(fill, 16, C.LINE2), 16, fill == C.NAVY)
+                contentDescription = desc
+                isClickable = true
+            }
+            var n = 0
+            val repeat = object : Runnable {
+                override fun run() {
+                    n++
+                    val s = when { n > 24 -> 10; n > 14 -> 5; n > 6 -> 2; else -> 1 }
+                    if (step(dir * s)) main.postDelayed(this, 110)
+                }
+            }
+            @Suppress("ClickableViewAccessibility")
+            v.setOnTouchListener { view, e ->
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        view.drawableHotspotChanged(e.x, e.y)
+                        view.isPressed = true
+                        n = 0
+                        step(dir)
+                        main.postDelayed(repeat, 450)
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        view.isPressed = false
+                        main.removeCallbacks(repeat)
+                        if (e.actionMasked == android.view.MotionEvent.ACTION_UP) view.performClick()
+                        done()
+                    }
+                }
+                true
+            }
+            return v
+        }
+        r.addView(key(Icons.MINUS, -1, 0xFFF3F5F9.toInt(), C.INK, "Togli"), ui.fixed(size, size))
         val mid = ui.col()
         mid.gravity = Gravity.CENTER_HORIZONTAL
-        mid.addView(ui.num("${p.boxes}", numSize).apply { gravity = Gravity.CENTER })
-        val pcs = pack?.takeIf { it > 0 }?.let { " = ${n(it * p.boxes)} pz" } ?: ""
-        mid.addView(ui.text(colli(p.boxes) + pcs, 12f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 2))
-        r.addView(mid, ui.lp(w = 0, weight = 1f))
-        val plus = ui.icon(Icons.PLUS, Color.WHITE, size, 2.2f).apply {
-            val pd = ui.dp(size / 3)
-            setPadding(pd, pd, pd, pd)
-            background = ui.bg(C.NAVY, 16)
-            contentDescription = "Aggiungi un collo"
+        mid.addView(num)
+        subTv?.let { mid.addView(it, ui.lp(top = 2)) }
+        mid.contentDescription = "Scrivi il numero"
+        ui.tap(mid, 12) {
+            val e = EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setText("${get()}")
+                selectAll()
+                textSize = 22f
+                gravity = Gravity.CENTER
+            }
+            val d = AlertDialog.Builder(this).setTitle(title).setView(e)
+                .setPositiveButton("OK") { _, _ ->
+                    e.text.toString().toIntOrNull()?.let { set(it.coerceIn(min, 9999)); show(); done() }
+                }.setNegativeButton("Annulla", null).create()
+            d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+            d.show()
+            e.requestFocus()
         }
-        ui.tap(plus, 16, true) { p.boxes += 1; showResult() }
-        r.addView(plus, ui.fixed(size, size))
+        r.addView(mid, ui.lp(w = 0, weight = 1f))
+        r.addView(key(Icons.PLUS, 1, C.NAVY, Color.WHITE, "Aggiungi"), ui.fixed(size, size))
         return r
     }
+
+    /** − n colli + of the scan result (the screen is redrawn when the finger is lifted). */
+    private fun stepRow(p: Pending, pack: Double?, size: Int, numSize: Float): View =
+        counter({ p.boxes }, { p.boxes = it }, 1, size, numSize,
+            sub = { b -> colli(b) + (pack?.takeIf { it > 0 }?.let { " = ${n(it * b)} pz" } ?: "") }) { showResult() }
 
     /** QUANTI COLLI? card: the suggestion (tap = use it), − n +, how long it will last. */
     private fun stepper(p: Pending, info: StoreInfo?, pack: Double?): View {
@@ -1262,8 +1338,11 @@ class MainActivity : Activity() {
         } else if (info != null && info.suggestBoxes == 0) {
             head.addView(ui.chip("Il sistema non lo ordinerebbe", C.AMBER_INK, C.AMBER_SOFT, 11f))
         }
+        val askWhy = needsWhy(p.verdict, info, list.report(targetEan(p.verdict, p.scan))) &&
+            (list.line(targetEan(p.verdict, p.scan))?.boxes ?: 0) == 0
         c.addView(head)
         c.addView(stepRow(p, pack, 64, 44f), ui.lp(top = 14))
+        if (askWhy) c.addView(ui.text("Se lo aggiungi ti chiediamo il motivo (un tocco)", 12f, C.AMBER_INK).apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
         val withPack = info?.copy(pack = pack) ?: if (pack != null) StoreInfo(pack = pack) else null
         Catalog.coverAfter(withPack, p.boxes)?.let {
             c.addView(ui.text("Con ${p.boxes} ${colli(p.boxes)} arrivi a ~${Catalog.months(it)} di vendita", 12f, if (it > 120) C.AMBER_INK else C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 12))
@@ -1335,6 +1414,91 @@ class MainActivity : Activity() {
         body.addView(c, ui.lp(top = 14))
     }
 
+    /** Set while a stock count was opened from the "why" sheet: after the report the item goes in the list. */
+    private var afterStock: ((Int) -> Unit)? = null
+
+    /**
+     * The purchasing program would not order it (enough stock, already coming): the store knows better what
+     * is on the shelf, so instead of the office checking it later the store says why — with one tap.
+     */
+    private fun needsWhy(v: Verdict, info: StoreInfo?, rep: StockReport?): Boolean {
+        if (v.kind != Kind.ORDER && v.kind != Kind.SUBSTITUTE) return false
+        info ?: return false
+        if (rep?.status == "open") return false          // stock already being corrected: the count is used
+        return info.suggestBoxes == 0 || Catalog.overstocked(info)
+    }
+
+    private fun whySheet(ean: String, name: String, info: StoreInfo, sys: StoreInfo?) {
+        val dlg = Dialog(this)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val sheet = ui.col()
+        sheet.background = ui.bg(C.CARD, 24)
+        sheet.setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(18))
+        sheet.addView(View(this).apply { background = ui.bg(C.LINE2, 3) }, LinearLayout.LayoutParams(ui.dp(40), ui.dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        sheet.addView(ui.text("Perché lo ordini?", 22f, C.INK, ui.bold), ui.lp(top = 14))
+        val cover = info.coverDays((info.transitBoxes ?: 0.0) * (info.pack ?: 0.0))
+        val why = when {
+            (info.transitBoxes ?: 0.0) > 0 && (info.suggestBoxes ?: 1) == 0 -> "${n(info.transitBoxes)} ${colli((info.transitBoxes ?: 0.0).toInt())} già in arrivo"
+            cover != null -> "A sistema ${n(info.stock)} pz: bastano ${Catalog.months(cover)}"
+            else -> "A sistema ${n(info.stock)} pz e si vende poco"
+        }
+        sheet.addView(ui.text("Il sistema non lo ordinerebbe · $why. Lo vede l'ufficio acquisti.", 13f, C.MUTED), ui.lp(top = 4))
+        fun add(reason: String, before: String = "") {
+            dlg.dismiss()
+            val msg = commit(reason)
+            beep(Kind.ORDER)
+            flash = msg?.let { before + it }
+            goBack()
+        }
+        fun option(icon: Icons.Spec, fg: Int, fill: Int, title: String, sub: String, onClick: () -> Unit) {
+            val r = ui.row()
+            r.background = ui.bg(C.CARD, 14, C.LINE2)
+            r.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            r.addView(ui.iconBadge(icon, fill, fg, 38, 20, 2.2f))
+            val t = ui.col()
+            t.addView(ui.text(title, 15f, C.INK, ui.bold))
+            t.addView(ui.text(sub, 12f, C.MUTED), ui.lp(top = 1))
+            r.addView(t, ui.lp(w = 0, weight = 1f, start = 12))
+            r.addView(ui.icon(Icons.NEXT, C.FAINT, 16, 2.2f))
+            ui.tap(r, 14) { onClick() }
+            sheet.addView(r, ui.lp(top = 8))
+        }
+        if (sys != null) option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno: conta e segnala") {
+            dlg.dismiss()
+            afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
+            showCount(ean, name, sys)
+        }
+        option(Icons.TAG, C.ORANGE, C.ORANGE_SOFT, "Promozione o volantino", "Ne servono di più per l'offerta") { add("Promozione o volantino") }
+        option(Icons.BOX, C.BLUE_INK, C.BLUE_SOFT, "Più spazio a scaffale", "Nuova esposizione, testata, ripiano in più") { add("Più spazio a scaffale") }
+        option(Icons.INFO, C.GREEN_INK, C.GREEN_SOFT, "L'ha chiesto un cliente", "Ordine o prenotazione di un cliente") { add("Richiesto da un cliente") }
+        val other = EditText(this).apply {
+            hint = "Altro motivo"
+            setSingleLine()
+            textSize = 15f
+            background = ui.bg(C.CARD, 12, C.LINE2)
+            setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        val orow = ui.row()
+        orow.addView(other, ui.lp(w = 0, h = ui.dp(46), weight = 1f))
+        orow.addView(ui.button("Aggiungi", C.NAVY, size = 14f) {
+            val t = other.text.toString().trim()
+            if (t.length >= 3) { hideKeyboard(other); add(t) } else other.error = "Scrivi il motivo"
+        }, ui.lp(w = ui.dp(96), h = ui.dp(46), start = 8))
+        sheet.addView(orow, ui.lp(top = 12))
+        sheet.addView(ui.button("Annulla · non lo aggiungo", 0, C.INK, size = 15f) { dlg.dismiss() }, ui.lp(h = ui.dp(48), top = 12))
+        val wrap = FrameLayout(this)
+        wrap.addView(sheet, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        dlg.setContentView(ScrollView(this).apply { addView(wrap) })
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            w.setGravity(Gravity.BOTTOM)
+            w.setDimAmount(0.6f)
+        }
+        dlg.show()
+    }
+
     /** Bottom sheet: why it is urgent and how many boxes. */
     private fun urgentSheet(v: Verdict, info: StoreInfo?, old: Line?) {
         val reasons = listOf("Scaffale vuoto", "Cliente in attesa", "Promozione in corso", "Il diretto arriva troppo tardi", "Altro")
@@ -1387,9 +1551,7 @@ class MainActivity : Activity() {
             q.background = ui.bg(C.CANVAS, 14)
             q.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
             q.addView(ui.text("Quanti colli", 14f, C.INK, ui.bold), ui.lp(w = 0, weight = 1f))
-            q.addView(ui.button("−", C.CARD, C.INK, C.LINE2, 22f) { if (boxes > 1) { boxes -= 1; render() } }, ui.fixed(44, 44))
-            q.addView(ui.num("$boxes", 26f).apply { gravity = Gravity.CENTER }, ui.fixed(44, 44))
-            q.addView(ui.button("+", C.NAVY, size = 22f) { boxes += 1; render() }, ui.fixed(44, 44))
+            q.addView(counter({ boxes }, { boxes = it }, 1, 44, 26f) { render() }, ui.lp(w = ui.dp(150)))
             sheet.addView(q, ui.lp(top = 14))
             val r = ui.row()
             r.addView(ui.button("Indietro", 0, C.INK, size = 15f) { dlg.dismiss() }, ui.fixed(100, 52))
@@ -1434,7 +1596,8 @@ class MainActivity : Activity() {
                     out.add(Check(l, "non più ordinabile questa settimana", 2))
                 Catalog.overstocked(info) -> {
                     val c = info!!.coverDays((info.transitBoxes ?: 0.0) * (info.pack ?: 0.0))
-                    out.add(Check(l, "hai già ${n(info.stock)} pz" + (if (c != null) ", bastano ${Catalog.months(c)}" else ", non si vendono"), 0))
+                    out.add(Check(l, "hai già ${n(info.stock)} pz" + (if (c != null) ", bastano ${Catalog.months(c)}" else ", non si vendono") +
+                        (l.reason?.let { " · motivo: $it" } ?: ""), 0))
                 }
                 (info?.transitBoxes ?: 0.0) > 0 -> out.add(Check(l, "${n(info!!.transitBoxes)} ${colli(info.transitBoxes!!.toInt())} già in arrivo", 1))
             }
@@ -1684,7 +1847,7 @@ class MainActivity : Activity() {
             "sub" -> "al posto di " + (l.origName ?: l.origEan ?: "")
             "urgent" -> "Urgenza · " + (l.reason ?: "")
             "remind" -> "Te lo riproponiamo quando torna"
-            else -> l.ean
+            else -> l.reason?.let { "Motivo · $it" } ?: l.ean
         } + (if (!l.updatedBy.isNullOrEmpty() && l.updatedBy != api.deviceName) " · ${l.updatedBy}" else "")
         c.addView(ui.text(sub, 11f, if (l.kind == "urgent") C.RED_INK else C.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, ui.lp(top = 2))
         left.addView(c, ui.lp(w = 0, weight = 1f, start = 10))
@@ -1702,20 +1865,19 @@ class MainActivity : Activity() {
             r.addView(small(Icons.CLOSE, C.CARD, C.MUTED, "Togli") { list.remove(l.ean); api.savePending(list); sync(quiet = true); redraw() }, ui.fixed(38, 38, 6))
             return r
         }
-        val step = { d: Int ->
-            val nb = l.boxes + d
+        var nb = l.boxes
+        val st = counter({ nb }, { nb = it }, 0, 38, 16f, l.name.ifEmpty { l.ean }) {
+            if (nb == l.boxes) return@counter
             if (nb <= 0) {
                 AlertDialog.Builder(this).setTitle("Togliere dalla lista?").setMessage(l.name)
                     .setPositiveButton("Togli") { _, _ -> list.remove(l.ean); api.savePending(list); sync(quiet = true); redraw() }
-                    .setNegativeButton("Annulla", null).show()
+                    .setNegativeButton("Annulla") { _, _ -> redraw() }.show()
             } else {
                 change(l.copy(boxes = nb, updatedBy = api.deviceName, updatedAt = System.currentTimeMillis()))
                 redraw()
             }
         }
-        r.addView(small(Icons.MINUS, C.CARD, C.INK, "Togli un collo") { step(-1) }, ui.fixed(38, 38, 6))
-        r.addView(ui.num("${l.boxes}", 16f).apply { gravity = Gravity.CENTER }, ui.fixed(34, 38))
-        r.addView(small(Icons.PLUS, C.NAVY, Color.WHITE, "Aggiungi un collo") { step(1) }, ui.fixed(38, 38))
+        r.addView(st, ui.lp(w = ui.dp(124), start = 6))
         return r
     }
 
