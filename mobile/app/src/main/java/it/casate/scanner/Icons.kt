@@ -45,6 +45,7 @@ object Icons {
     val BOX = spec("M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8")
     val INFO = spec("M12 11v5M12 8h.01", floatArrayOf(12f, 12f, 8.5f))
     val REFRESH = spec("M4 18v-6h6") { it.addArc(RectF(4f, 4f, 20f, 20f), 180f, 290f) }
+    val MORE = spec("M12 5.5h.01M12 12h.01M12 18.5h.01")
     val TAG = spec("M3 12V4h8l10 10-8 8z", floatArrayOf(7.5f, 7.5f, 1.2f))
 
     /** A small SVG path reader: M L H V C Z (absolute and relative). Enough for line icons. */
