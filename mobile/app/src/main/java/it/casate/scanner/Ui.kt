@@ -64,6 +64,8 @@ class Ui(private val a: Activity) {
     val bold: Typeface = Typeface.create("sans-serif", Typeface.BOLD)
     val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
+    fun ctx(): android.content.Context = a
+
     fun dp(v: Int) = (v * a.resources.displayMetrics.density).toInt()
     fun dpf(v: Float) = v * a.resources.displayMetrics.density
 
@@ -105,8 +107,8 @@ class Ui(private val a: Activity) {
         this.gravity = gravity
     }
 
-    fun lp(w: Int = MATCH, h: Int = WRAP, top: Int = 0, weight: Float = 0f, start: Int = 0) =
-        LinearLayout.LayoutParams(w, h, weight).apply { topMargin = dp(top); marginStart = dp(start) }
+    fun lp(w: Int = MATCH, h: Int = WRAP, top: Int = 0, weight: Float = 0f, start: Int = 0, bottom: Int = 0) =
+        LinearLayout.LayoutParams(w, h, weight).apply { topMargin = dp(top); marginStart = dp(start); bottomMargin = dp(bottom) }
 
     fun fixed(w: Int, h: Int, start: Int = 0) = LinearLayout.LayoutParams(dp(w), dp(h)).apply { marginStart = dp(start) }
 
