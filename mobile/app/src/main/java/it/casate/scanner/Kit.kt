@@ -234,10 +234,16 @@ class Stepper(private val ui: Ui, private val get: () -> Int, private val set: (
                 if (step(dir * s)) main.postDelayed(this, 110)
             }
         }
+        f.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) { main.removeCallbacks(repeat) }   // page redrawn while held
+        })
         @Suppress("ClickableViewAccessibility")
         f.setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    // the page must not scroll away (and cancel the press) while the finger is on − / +
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
                     v.drawableHotspotChanged(e.x, e.y); v.isPressed = true; n = 0
                     if (step(dir)) v.haptic()
                     main.postDelayed(repeat, 450)
@@ -246,7 +252,9 @@ class Stepper(private val ui: Ui, private val get: () -> Int, private val set: (
                     v.isPressed = false
                     main.removeCallbacks(repeat)
                     if (e.actionMasked == MotionEvent.ACTION_UP) v.performClick()
-                    onDone()
+                    // onDone usually rebuilds the page: never inside the touch dispatch (removing the view that is
+                    // being touched made Android crash, e.g. when the scroll view cancelled the press)
+                    main.post { onDone() }
                 }
             }
             true
@@ -264,7 +272,7 @@ class Stepper(private val ui: Ui, private val get: () -> Int, private val set: (
             gravity = Gravity.CENTER
         }
         val d = android.app.AlertDialog.Builder(ctx).setTitle(title).setView(e)
-            .setPositiveButton("OK") { _, _ -> e.text.toString().toIntOrNull()?.let { set(it.coerceIn(min, 9999)); refresh(); onChange(); onDone() } }
+            .setPositiveButton("OK") { _, _ -> e.text.toString().toIntOrNull()?.let { set(it.coerceIn(min, 9999)); refresh(); onChange(); main.post { onDone() } } }
             .setNegativeButton("Annulla", null).create()
         d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
         d.show()
@@ -289,13 +297,14 @@ fun Ui.holdButton(label: String, color: Int, dark: Int, onDone: () -> Unit): Fra
     hold.setOnTouchListener { v, e ->
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> if (!done) {
+                v.parent?.requestDisallowInterceptTouchEvent(true)
                 v.haptic()
                 anim = ValueAnimator.ofFloat(fill.scaleX, 1f).apply {
                     duration = (1500 * (1f - fill.scaleX)).toLong().coerceAtLeast(1)
                     addUpdateListener { fill.scaleX = it.animatedValue as Float }
                     addListener(object : android.animation.AnimatorListenerAdapter() {
                         override fun onAnimationEnd(a: android.animation.Animator) {
-                            if (fill.scaleX >= 0.999f && !done) { done = true; t.text = "Invio…"; v.haptic(true); onDone() }
+                            if (fill.scaleX >= 0.999f && !done) { done = true; t.text = "Invio…"; v.haptic(true); v.post { onDone() } }
                         }
                     })
                     start()
