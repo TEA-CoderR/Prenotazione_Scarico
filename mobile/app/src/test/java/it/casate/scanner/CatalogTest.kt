@@ -56,4 +56,17 @@ class CatalogTest {
         val c = Catalog(1, "", "", emptyMap(), mapOf("8001090000001" to info))
         assertEquals(9.0, c.info("08001090000001")?.stock)
     }
+
+    @Test
+    fun searchByNameWordsOrBarcodeGrigliaFirst() {
+        val a = Item("8001", "SVELTO PIATTI LIMONE 1000", 0, listOf("MELONI"), "", "", "")
+        val b = Item("8002", "SVELTO PIATTI LIMONE 980", 1, listOf("MELONI"), "", "", "", pack = 12.0, bestPrice = 1.1, bestSource = "MELONI")
+        val c = Item("8003", "DIXAN 40", 1, emptyList(), "", "", "")
+        val cat = Catalog(1, "", "", mapOf("8001" to a, "8002" to b, "8003" to c), imageUrl = "https://x/{ean}.webp")
+        assertEquals(listOf("8002", "8001"), cat.search("svelto limone").map { it.ean })
+        assertEquals(listOf("8003"), cat.search("8003").map { it.ean })
+        assertEquals(emptyList<Item>(), cat.search("  "))
+        assertEquals(12.0, cat.find("8002")!!.pack)
+        assertEquals("https://x/{ean}.webp", cat.imageUrl)
+    }
 }
