@@ -84,6 +84,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        catchCrashes()
         api = Api(this)
         ui = Ui(this)
         ui.images = Images(this)
@@ -102,6 +103,38 @@ class MainActivity : Activity() {
             useImageUrl()
             render()
         } else showPairing(null)
+        showLastCrash()
+    }
+
+    // ================================================================== crashes
+    private val crashFile get() = java.io.File(filesDir, "last_crash.txt")
+
+    /** If the app ever closes because of an error, keep what happened (shown at the next start, to send us). */
+    private fun catchCrashes() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching {
+                val sw = java.io.StringWriter()
+                e.printStackTrace(java.io.PrintWriter(sw))
+                crashFile.writeText("app ${Updater.installedName(this)} · ${java.time.LocalDateTime.now()} · ${t.name}\n$sw")
+            }
+            prev?.uncaughtException(t, e)
+        }
+    }
+
+    private fun showLastCrash() {
+        val f = crashFile
+        if (!f.exists()) return
+        val txt = runCatching { f.readText() }.getOrDefault("")
+        f.delete()
+        if (txt.isBlank()) return
+        val lines = txt.lines()
+        // the error and where it happened in this app's code (what is worth a photo)
+        val ours = lines.filter { it.contains("it.casate.scanner") }.take(6)
+        val short = (lines.take(2) + ours).joinToString("\n").take(1200)
+        AlertDialog.Builder(this).setTitle("L'app si era chiusa per un errore")
+            .setMessage("Fai una foto a questa schermata e mandala all'ufficio acquisti:\n\n$short")
+            .setPositiveButton("OK", null).show()
     }
 
     override fun onResume() {
