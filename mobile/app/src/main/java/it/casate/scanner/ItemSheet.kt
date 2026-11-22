@@ -16,6 +16,8 @@ internal class Pending(val scan: String, val verdict: Verdict, var boxes: Int, v
     var mode = 0
     /** The stock choices were opened from the reason "Giacenza sbagliata" (then the item also goes in the list). */
     var stockForWhy = false
+    /** First draw after the scan: the coloured header pops in. */
+    var fresh = true
     val orderable get() = verdict.kind == Kind.ORDER || verdict.kind == Kind.SUBSTITUTE || verdict.kind == Kind.URGENT_ONLY
 }
 
@@ -65,58 +67,57 @@ internal fun MainActivity.showItem() {
     if (p.mode == 1 && sys != null) return stockChoices(p, target, name, sys)
 
     val body = ui.col()
-    body.setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(8))
+    body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(16))
+    val hero = heroBand(v)
 
-    // status + close
-    data class St(val label: String, val fg: Int, val fill: Int, val note: String)
-    val st = when (v.kind) {
-        Kind.ORDER -> St("ORDINABILE", C.GREEN_INK, C.GREEN_SOFT, "${v.item!!.wholesalers.size} " + if (v.item.wholesalers.size == 1) "grossista" else "grossisti")
-        Kind.SUBSTITUTE -> St("SOSTITUITO", C.BLUE_INK, C.BLUE_SOFT, "Ordina il nuovo")
-        Kind.NOT_AVAILABLE -> St("NON DISPONIBILE", C.AMBER_INK, C.AMBER_SOFT, "Nessun grossista questa settimana")
-        Kind.URGENT_ONLY -> St("SOLO URGENZE", C.ORANGE, C.ORANGE_SOFT, if (v.item!!.griglia == 2) "Tolto dalla Griglia" else "Non in Griglia")
-        Kind.DIRECT_ONLY -> St("NON IN GRIGLIA", C.RED_INK, C.RED_SOFT, "Nessun grossista")
-        Kind.UNKNOWN -> St("SCONOSCIUTO", C.MUTED, 0xFFEEF1F6.toInt(), "Non in catalogo")
-    }
-    val head = ui.row()
-    head.addView(ui.pill(st.label, st.fg, st.fill))
-    head.addView(ui.text(st.note, 13f, C.MUTED).oneLine(), ui.lp(w = 0, weight = 1f, start = 10))
-    head.addView(ui.iconTap(Icons.CLOSE, C.MUTED, "Chiudi") { sheet.close(); render() })
-    body.addView(head)
-
+    // the product (for a substitute: the old one crossed out, then the new one)
     if (v.kind == Kind.SUBSTITUTE) {
-        val o = ui.row()
-        o.background = ui.bg(0xFFF1F4F8.toInt(), 12)
-        o.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
-        o.addView(ui.icon(Icons.SWAP, C.BLUE_INK, 16, 2.2f))
-        o.addView(ui.text("Al posto di ", 12f, C.MUTED), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
-        o.addView(ui.struck(ui.text(v.item!!.name, 12f, C.MUTED, ui.medium)).oneLine(), ui.lp(w = 0, weight = 1f))
-        body.addView(o, ui.lp(top = 12))
+        val old = ui.row()
+        old.background = ui.dashed(0xFFC4CCDA.toInt(), 0xFFEEF1F6.toInt(), 16)
+        old.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+        old.addView(ui.photo(v.item!!.ean, v.item.name, 44, C.FAINT, faded = true))
+        val oc = ui.col()
+        oc.addView(ui.text("HAI SCANSIONATO · NON PIÙ IN VENDITA", 10f, C.MUTED, ui.bold).oneLine())
+        oc.addView(ui.struck(ui.text(v.item.name, 13f, C.MUTED, ui.medium)).oneLine(), ui.lp(top = 3))
+        old.addView(oc, ui.lp(w = 0, weight = 1f, start = 12))
+        body.addView(old)
+        body.addView(ui.icon(Icons.DOWN, C.BLUE, 20, 2.4f), LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(6); bottomMargin = ui.dp(6) })
     }
-
-    // the product
-    val pr = ui.row(Gravity.TOP)
-    pr.addView(ui.photo(item?.ean ?: p.scan, name, 72, kindColor(v.kind)))
+    val pr = ui.row()
+    pr.addView(ui.photo(item?.ean ?: p.scan, name, 64, if (v.kind == Kind.NOT_AVAILABLE) C.AMBER_INK else kindColor(v.kind)))
     val pc = ui.col()
-    pc.addView(ui.text(name, 18f, C.INK, ui.bold).lines(2))
-    pc.addView(ui.num((item?.ean ?: p.scan) + (pack?.let { " · ${n(it)} pz/collo" } ?: ""), 12f, C.MUTED).oneLine(), ui.lp(top = 4))
-    priceLine(info)?.let { pc.addView(it, ui.lp(top = 8)) }
-    pr.addView(pc, ui.lp(w = 0, weight = 1f, start = 14))
-    body.addView(pr, ui.lp(top = 14))
+    if (v.kind == Kind.SUBSTITUTE) pc.addView(ui.text("ORDINA QUESTO AL SUO POSTO", 10f, C.BLUE, ui.bold))
+    pc.addView(ui.text(name, 16f, C.INK, ui.bold).lines(2))
+    pc.addView(ui.num((item?.ean ?: p.scan) + (pack?.let { " · ${n(it)} pz/collo" } ?: ""), 12f, C.MUTED).oneLine(), ui.lp(top = 3))
+    pr.addView(pc, ui.lp(w = 0, weight = 1f, start = 12))
+    body.addView(pr)
 
-    // this store's numbers + is the stock right?
+    // this store's numbers
     if (info != null) {
         val cover = info.coverDays((info.transitBoxes ?: 0.0) * (pack ?: 0.0))
         val empty = (info.stock ?: 0.0) <= 0
-        body.addView(ui.stats(listOf(
-            Stat(if (rep?.status == "open") "Contati" else "In negozio", n(info.stock), "pz", if (empty) C.RED_INK else C.INK),
-            Stat("Venduti 30g", n(info.sold30), "pz"),
-            Stat("In arrivo", n(info.transitBoxes ?: 0.0), colli((info.transitBoxes ?: 0.0).toInt()), if ((info.transitBoxes ?: 0.0) > 0) C.BLUE_INK else C.INK),
-            Stat("Basta per", cover?.toString() ?: "–", if (cover != null) "gg" else "", if (cover != null && cover < 14) C.AMBER_INK else C.INK),
-        )), ui.lp(top = 16))
-        if (sys != null) body.addView(stockRow(p, target, name, sys, rep), ui.lp(top = 8))
+        val tiles = ui.row()
+        fun add(t: View) = tiles.addView(t, ui.lp(w = 0, weight = 1f, start = if (tiles.childCount == 0) 0 else 6))
+        val stockLabel = if (rep?.status == "open") "Contati" else "In negozio"
+        add(if (empty) ui.tile(stockLabel, "0", "pz", C.RED_SOFT, 0xFFF7C6C0.toInt(), C.RED_INK, C.RED_INK) else ui.tile(stockLabel, n(info.stock), "pz"))
+        add(ui.tile("Venduti 30g", n(info.sold30), "pz"))
+        add(ui.tile("In arrivo", n(info.transitBoxes ?: 0.0), colli((info.transitBoxes ?: 0.0).toInt()), fg = if ((info.transitBoxes ?: 0.0) > 0) C.BLUE else C.INK))
+        add(when {
+            cover == null -> ui.tile("Basta per", "–")
+            cover < 14 -> ui.tile("Basta per", "$cover", "gg", C.AMBER_SOFT, C.AMBER_LINE, C.AMBER_INK, C.AMBER_INK)
+            else -> ui.tile("Basta per", "$cover", "gg")
+        })
+        body.addView(tiles, ui.lp(top = 14))
     } else if (v.kind != Kind.UNKNOWN) {
-        body.addView(ui.text("Giacenza e vendite di $store non ancora pubblicate", 12f, C.MUTED), ui.lp(top = 14))
+        val r = ui.row()
+        r.background = ui.bg(0xFFEEF1F6.toInt(), 12)
+        r.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+        r.addView(ui.icon(Icons.INFO, C.MUTED, 16, 2f))
+        r.addView(ui.text("Giacenza e vendite di $store non ancora pubblicate", 12f, C.MUTED), ui.lp(w = 0, weight = 1f, start = 8))
+        body.addView(r, ui.lp(top = 14))
     }
+    priceLine(info)?.let { body.addView(it, ui.lp(top = 8)) }
+    if (info != null && sys != null) body.addView(stockRow(p, target, name, sys, rep), ui.lp(top = 8))
 
     when (v.kind) {
         Kind.ORDER, Kind.SUBSTITUTE -> decision(body, p, info, pack, adv, inList)
@@ -132,25 +133,51 @@ internal fun MainActivity.showItem() {
     }
     lastWeekLine(target)?.let { body.addView(it, ui.lp(top = 14)) }
 
-    sheet.show(body, actions(p, v, target, item, info, sys, adv, inList, rep))
+    sheet.show(hero, body, actions(p, v, target, item, info, sys, adv, inList, rep), animate = p.fresh)
+    p.fresh = false
 }
 
-/** Sale price, struck through when on offer, and the offer price (the purchase price is never shown). */
+/** Sale price (struck through when on offer) and the offer price; the purchase price is never shown. */
 private fun MainActivity.priceLine(info: StoreInfo?): View? {
     val price = info?.price?.takeIf { it > 0 }
     val promo = info?.promoPrice?.takeIf { it > 0 }
     if (price == null && promo == null) return null
-    val r = ui.row()
+    val pr = ui.row()
+    pr.background = ui.bg(C.CARD, 12, C.LINE)
+    pr.setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(9))
+    pr.addView(ui.icon(Icons.TAG, C.MUTED, 16, 2f))
+    pr.addView(ui.text("Prezzo ", 12f, C.MUTED), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
     if (price != null) {
-        val t = ui.num(eur(price), if (promo == null) 16f else 13f, if (promo == null) C.INK else C.FAINT)
-        if (promo != null) ui.struck(t)
-        r.addView(t)
+        val sale = ui.num(eur(price), 15f)
+        if (promo != null) ui.struck(sale).setTextColor(C.FAINT)
+        pr.addView(sale)
     }
-    if (promo != null) {
-        r.addView(ui.num(eur(promo), 16f, C.RED_INK), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = if (price != null) 8 else 0))
-        r.addView(ui.chip("OFFERTA" + (if (info.promoEnd.isNotEmpty()) " · ${info.promoEnd}" else ""), Color.WHITE, C.RED, 10f),
-            ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
+    pr.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+    if (promo != null) pr.addView(ui.chip("OFFERTA " + eur(promo) + (if (info.promoEnd.isNotEmpty()) " · fino " + info.promoEnd else ""), Color.WHITE, C.RED, 12f))
+    return pr
+}
+
+/** The coloured band of the verdict (v3 look). */
+private fun MainActivity.heroBand(v: Verdict): View {
+    data class Hero(val bg: Int, val fg: Int, val sub: Int, val icon: Icons.Spec, val title: String, val line: String)
+    val h = when (v.kind) {
+        Kind.ORDER -> Hero(C.GREEN, Color.WHITE, 0xFFD5F5E8.toInt(), Icons.CHECK, "ORDINABILE",
+            "In Griglia · " + v.item!!.wholesalers.size + (if (v.item.wholesalers.size == 1) " grossista lo ha" else " grossisti lo hanno"))
+        Kind.SUBSTITUTE -> Hero(C.BLUE, Color.WHITE, 0xFFDCE6FF.toInt(), Icons.SWAP, "SOSTITUITO", "Questo codice non c'è più · ordina il nuovo")
+        Kind.NOT_AVAILABLE -> Hero(C.AMBER, 0xFF2B1A00.toInt(), 0xFF4A3300.toInt(), Icons.CLOCK, "NON DISPONIBILE", "In Griglia, ma questa settimana nessun grossista lo ha")
+        Kind.URGENT_ONLY -> Hero(C.ORANGE, Color.WHITE, 0xFFFFE2CC.toInt(), Icons.BOLT, "SOLO PER URGENZE",
+            (if (v.item!!.griglia == 2) "Tolto dalla Griglia" else "Non è in Griglia") + " · dal grossista solo se serve subito")
+        Kind.DIRECT_ONLY -> Hero(C.RED, Color.WHITE, 0xFFFFD9D4.toInt(), Icons.BAN, "NON IN GRIGLIA", "Nessun grossista DETERSIVI lo ha")
+        Kind.UNKNOWN -> Hero(0xFF475569.toInt(), Color.WHITE, 0xFFE2E8F0.toInt(), Icons.INFO, "SCONOSCIUTO", "Non è in Griglia né nei listini dei grossisti")
     }
+    val r = ui.row()
+    r.setBackgroundColor(h.bg)
+    r.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(16))
+    r.addView(ui.iconBadge(h.icon, if (h.fg == Color.WHITE) 0x2EFFFFFF else 0x59FFFFFF, h.fg, 48, 26, 2.6f))
+    val t = ui.col()
+    t.addView(ui.text(h.title, 23f, h.fg, ui.bold).oneLine())
+    t.addView(ui.text(h.line, 13f, h.sub).lines(2), ui.lp(top = 3))
+    r.addView(t, ui.lp(w = 0, weight = 1f, start = 14))
     return r
 }
 
@@ -199,60 +226,49 @@ private fun MainActivity.stockRow(p: Pending, ean: String, name: String, sys: St
     return r
 }
 
-/** Suggestion + quantity + (when needed) the reason, all on the card. */
+/** QUANTI COLLI? card: the suggestion (tap = use it), − n +, what it means; the reason when needed. */
 private fun MainActivity.decision(body: LinearLayout, p: Pending, info: StoreInfo?, pack: Double?, adv: Advice, inList: Line?) {
-    val box = ui.card(20)
-    box.setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(16))
-    // the suggestion
-    val sr = ui.row()
-    sr.addView(ui.iconBadge(Icons.SPARK, C.GREEN_SOFT, C.GREEN_INK, 36, 18, 2.4f))
-    val sc = ui.col()
+    val c = ui.col(16)
+    c.background = ui.bg(C.CARD, 18, C.LINE)
+    val head = ui.row()
+    head.addView(ui.text("QUANTI COLLI?", 13f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f))
     val b = adv.boxes
-    val big = ui.row(Gravity.BOTTOM)
-    big.addView(ui.text("Consigliato  ", 13f, C.MUTED, ui.medium))
-    if (b == null) big.addView(ui.text("—", 18f, C.MUTED, ui.bold))
-    else {
-        big.addView(ui.num("$b", 22f, if (b > 0) C.GREEN_INK else C.MUTED))
-        big.addView(ui.text(" " + colli(b), 14f, if (b > 0) C.GREEN_INK else C.MUTED, ui.bold))
-        if (adv.estimated) big.addView(ui.chip("STIMA", C.MUTED, 0xFFEEF1F6.toInt(), 10f), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
+    if (b != null) {
+        val chip = ui.row()
+        chip.background = ui.bg(if (b > 0) C.GREEN_SOFT else C.AMBER_SOFT, 999)
+        chip.setPadding(ui.dp(10), ui.dp(6), ui.dp(12), ui.dp(6))
+        chip.addView(ui.icon(Icons.SPARK, if (b > 0) C.GREEN_INK else C.AMBER_INK, 13, 2.4f))
+        chip.addView(ui.text((if (adv.estimated) "Stima " else "Consigliato ") + b, 12f, if (b > 0) C.GREEN_INK else C.AMBER_INK, ui.bold), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 5))
+        chip.contentDescription = "Usa il consigliato: $b"
+        if (b > 0) ui.tap(chip, 999) { p.boxes = b; showItem() }
+        head.addView(chip)
     }
-    sc.addView(big)
-    sc.addView(ui.text(if (b == 0) "Non serve · " + adv.reason else adv.reason, 12f, C.MUTED).lines(2), ui.lp(top = 3))
-    sr.addView(sc, ui.lp(w = 0, weight = 1f, start = 12))
-    if (b != null && b > 0 && b != p.boxes) {
-        sr.addView(ui.outline("Usa $b", C.GREEN_INK, 0xFF9FDCC4.toInt()) { p.boxes = b; showItem() })
-    }
-    box.addView(sr)
-    box.addView(ui.divider(), ui.lp(h = ui.dp(1), top = 14))
-
-    // the quantity
-    val qh = ui.row()
-    qh.addView(ui.caption("Da ordinare"), ui.lp(w = 0, weight = 1f))
+    c.addView(head)
+    c.addView(ui.text(if (b == 0) "Il sistema non lo ordinerebbe · " + adv.reason else adv.reason, 12f, C.MUTED).lines(2), ui.lp(top = 6))
     if (inList != null && inList.boxes > 0) {
         val by = if (!inList.updatedBy.isNullOrEmpty() && inList.updatedBy != api.deviceName) " · ${inList.updatedBy}" else ""
-        qh.addView(ui.chip("In lista $by".trim() + " · ${inList.boxes}", C.BLUE_INK, C.BLUE_SOFT, 11f))
+        c.addView(ui.text("Già in lista: ${inList.boxes} ${colli(inList.boxes)}$by", 12f, C.BLUE_INK, ui.bold), ui.lp(top = 4))
     }
-    box.addView(qh, ui.lp(top = 14))
     val note = ui.text("", 12f, C.MUTED).apply { gravity = Gravity.CENTER }
     fun noteText() {
         val pcs = pack?.let { " = ${n(it * p.boxes)} pz" } ?: ""
         val withPack = info?.copy(pack = pack) ?: pack?.let { StoreInfo(pack = it) }
-        val cover = Catalog.coverAfter(withPack, p.boxes)?.let { " · basta ~${Catalog.months(it)}" } ?: ""
+        val cover = Catalog.coverAfter(withPack, p.boxes)?.let { " · arrivi a ~${Catalog.months(it)}" } ?: ""
         note.text = colli(p.boxes) + pcs + cover
     }
     noteText()
-    val st = Stepper(ui, { p.boxes }, { p.boxes = it }, 1, 60, 40f, "Quanti colli?",
-        onChange = { noteText() },
-        onDone = { showItem() })   // the button label and the reason block follow the number
-    box.addView(st.view, ui.lp(top = 10))
-    box.addView(note, ui.lp(top = 8))
-    body.addView(box, ui.lp(top = 16))
+    val st = Stepper(ui, { p.boxes }, { p.boxes = it }, 1, 64, 44f, "Quanti colli?", onChange = { noteText() }, onDone = { showItem() })
+    c.addView(st.view, ui.lp(top = 14))
+    c.addView(note, ui.lp(top = 8))
+    body.addView(c, ui.lp(top = 14))
 
     // the reason, only when the system would not order this many
     if (needsWhy(p, info, adv)) {
         val over = b != null && b > 0
-        body.addView(ui.caption(if (over) "Perché più del consigliato?" else "Perché lo ordini?", C.AMBER_INK), ui.lp(top = 18))
-        body.addView(ui.text("Lo vede l'ufficio acquisti", 12f, C.MUTED), ui.lp(top = 3))
+        val w = ui.col(14)
+        w.background = ui.bg(C.AMBER_SOFT, 16, C.AMBER_LINE)
+        w.addView(ui.text(if (over) "Perché più del consigliato?" else "Perché lo ordini?", 15f, C.AMBER_INK, ui.bold))
+        w.addView(ui.text("Un tocco · lo vede l'ufficio acquisti", 12f, C.AMBER_INK), ui.lp(top = 2))
         val flow = FlowLayout(this, ui.dp(8), ui.dp(8))
         for (r in Feedbacks.byUse(WHY_REASONS.dropLast(1), api.whyUse) + "Altro") {
             flow.addView(ui.choice(r, p.reason == r, C.NAVY) {
@@ -261,8 +277,9 @@ private fun MainActivity.decision(body: LinearLayout, p: Pending, info: StoreInf
                 showItem()
             })
         }
-        body.addView(flow, ui.lp(top = 10))
-        if (p.reason == "Altro") body.addView(otherField(p), ui.lp(top = 10))
+        w.addView(flow, ui.lp(top = 10))
+        if (p.reason == "Altro") w.addView(otherField(p), ui.lp(top = 10))
+        body.addView(w, ui.lp(top = 10))
     }
 }
 
@@ -364,7 +381,14 @@ private fun MainActivity.lastWeekLine(ean: String): View? {
 private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: Item?, info: StoreInfo?, sys: StoreInfo?,
                                  adv: Advice, inList: Line?, rep: StockReport?): View {
     val c = ui.col()
+    c.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
     val name = item?.name ?: target
+    fun pair(second: View, main: View) {
+        val r = ui.row()
+        r.addView(second, ui.fixed(100, 52))
+        r.addView(main, ui.lp(w = 0, h = ui.dp(52), weight = 1f, start = 10))
+        c.addView(r)
+    }
     when (v.kind) {
         Kind.ORDER, Kind.SUBSTITUTE -> {
             val inIt = inList != null && inList.boxes > 0
@@ -376,26 +400,33 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
                 v.kind == Kind.SUBSTITUTE -> "Ordina il sostituto · ${p.boxes}"
                 else -> "Aggiungi ${p.boxes} ${colli(p.boxes)}"
             }
-            c.addView(ui.primary(label, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN, ready,
-                if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS,
-                whyDisabled = { toast("Scegli il motivo") }) { done(commit(p, target, name)) })
-            c.addView(if (inIt) ui.ghost("Togli dalla lista", C.RED_INK) { removeLine(target); done("Tolto: ${name.take(36)}") }
-                else ui.ghost("Annulla") { done(null) }, ui.lp(top = 4))
+            if (need && !ready) c.addView(ui.text("Scegli il motivo qui sopra", 12f, C.AMBER_INK, ui.bold).apply { gravity = Gravity.CENTER }, ui.lp(bottom = 8))
+            else {
+                val hint = ui.row(Gravity.CENTER)
+                hint.addView(ui.icon(Icons.BARCODE, C.MUTED, 14, 2f))
+                hint.addView(ui.text("Riscansiona lo stesso articolo: +1 collo", 12f, C.MUTED), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 6))
+                c.addView(hint, ui.lp(bottom = 10))
+            }
+            pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Tolto dalla lista: ${name.take(36)}") }
+                else ui.button("Annulla", 0, C.INK, size = 15f) { done(null) },
+                ui.primary(label, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN, ready,
+                    if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS,
+                    whyDisabled = { toast("Scegli il motivo") }) { done(commit(p, target, name)) })
         }
         Kind.URGENT_ONLY -> {
             val inIt = inList != null && inList.boxes > 0 && inList.kind == "urgent"
             val why = p.reasonText()
-            c.addView(ui.primary(if (inIt) "Salva l'urgenza · ${p.boxes}" else "Ordina come urgenza · ${p.boxes}", C.ORANGE, why != null, Icons.BOLT,
-                whyDisabled = { toast("Scegli perché è urgente") }) {
-                val it = v.item!!
-                change(Line(it.ean, it.name.take(120), p.boxes, "urgent", reason = why!!.take(120), updatedBy = api.deviceName, updatedAt = System.currentTimeMillis()))
-                done("Urgenza in lista: ${it.name.take(36)} · ${p.boxes}")
-            })
-            c.addView(if (inIt) ui.ghost("Togli dalla lista", C.RED_INK) { removeLine(target); done("Urgenza tolta") }
-                else ui.ghost("Non serve") { done(null) }, ui.lp(top = 4))
+            pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Urgenza tolta") }
+                else ui.button("Non serve", 0, C.INK, size = 15f) { done(null) },
+                ui.primary(if (inIt) "Salva · ${p.boxes}" else "Ordina urgenza · ${p.boxes}", C.ORANGE, why != null, Icons.BOLT,
+                    whyDisabled = { toast("Scegli perché è urgente") }) {
+                    val it = v.item!!
+                    change(Line(it.ean, it.name.take(120), p.boxes, "urgent", reason = why!!.take(120), updatedBy = api.deviceName, updatedAt = System.currentTimeMillis()))
+                    done("Urgenza in lista: ${it.name.take(36)} · ${p.boxes}")
+                })
         }
-        Kind.NOT_AVAILABLE -> c.addView(ui.primary("OK", C.NAVY, true, Icons.CHECK) { done(commit(p, target, name)) })
-        else -> c.addView(ui.primary("OK", C.NAVY, true, Icons.CHECK) { done(null) })
+        Kind.NOT_AVAILABLE -> c.addView(ui.primary("OK · prossimo articolo", C.NAVY, true, Icons.CHECK) { done(commit(p, target, name)) })
+        else -> c.addView(ui.primary("OK · prossimo articolo", C.NAVY, true, Icons.CHECK) { done(null) })
     }
     return c
 }
@@ -436,11 +467,8 @@ internal fun MainActivity.done(msg: String?) {
 /** "Is the stock wrong?" on the same card: two clear ways. */
 private fun MainActivity.stockChoices(p: Pending, ean: String, name: String, sys: StoreInfo) {
     val body = ui.col()
-    body.setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(8))
-    val head = ui.row()
-    head.addView(ui.iconTap(Icons.BACK, C.INK, "Indietro") { p.mode = 0; showItem() })
-    head.addView(ui.text("La giacenza è sbagliata?", 20f, C.INK, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = 4))
-    body.addView(head)
+    body.setPadding(ui.dp(18), ui.dp(18), ui.dp(18), ui.dp(16))
+    body.addView(ui.text("La giacenza è sbagliata?", 22f, C.INK, ui.bold).oneLine())
     body.addView(ui.text("A sistema ${n(sys.stock)} pz · ${name.take(40)}", 13f, C.MUTED).oneLine(), ui.lp(top = 4))
     fun option(icon: Icons.Spec, fg: Int, fill: Int, line: Int, title: String, sub: String, onClick: () -> Unit) {
         val r = ui.row()
@@ -476,7 +504,10 @@ private fun MainActivity.stockChoices(p: Pending, ean: String, name: String, sys
             showItem()
         }
     }
-    sheet.show(body, ui.ghost("Annulla") { p.mode = 0; showItem() })
+    val foot = ui.col()
+    foot.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
+    foot.addView(ui.button("Annulla", 0, C.INK, size = 15f) { p.mode = 0; showItem() }, ui.lp(h = ui.dp(52)))
+    sheet.show(heroBand(p.verdict), body, foot)
 }
 
 private fun MainActivity.commitWithReason(p: Pending, ean: String, name: String, reason: String): String? {

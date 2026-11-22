@@ -20,38 +20,41 @@ internal fun MainActivity.listTab(): View {
     root.setBackgroundColor(C.CANVAS)
     val v = list.server
     val sent = list.submitted && !list.changedSinceSubmit
-    root.addView(ui.largeTitle("Lista", listOfNotNull(v?.week?.let { weekNo(it) }, v?.let { "chiude " + shortDay(it.deadline) }).joinToString(" · ")))
+    val head = header("Lista " + (v?.week?.let { weekNo(it).lowercase() } ?: ""),
+        v?.let { "chiude tra " + countdown(it.deadline) + " · " + shortDay(it.deadline) }, C.YELLOW) { go(MainActivity.Tab.SCAN) }
+    val stats = ui.row()
+    for ((i, s3) in listOf(
+        Triple("${list.ordered.size}", "articoli", android.graphics.Color.WHITE),
+        Triple("${list.boxes}", "colli", android.graphics.Color.WHITE),
+        Triple("${list.urgent}", if (list.urgent == 1) "urgenza" else "urgenze", if (list.urgent > 0) C.CORAL else android.graphics.Color.WHITE),
+    ).withIndex()) {
+        val c = ui.col()
+        c.background = ui.bg(C.NAVY2, 12)
+        c.setPadding(ui.dp(10), ui.dp(8), ui.dp(8), ui.dp(8))
+        c.addView(ui.num(s3.first, 20f, s3.third))
+        c.addView(ui.text(s3.second, 11f, C.ON_NAVY_MUTED), ui.lp(top = 2))
+        stats.addView(c, ui.lp(w = 0, weight = 1f, start = if (i == 0) 0 else 6))
+    }
+    head.addView(stats, ui.lp(top = 12))
+    root.addView(head)
 
     val body = ui.col()
-    body.setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(16))
-
-    // summary / state
-    val s = ui.card(20)
-    s.setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
-    val sr = ui.row()
-    fun big(value: String, label: String, color: Int = C.INK) {
-        val c = ui.col()
-        c.addView(ui.num(value, 24f, color))
-        c.addView(ui.text(label, 12f, C.MUTED), ui.lp(top = 2))
-        sr.addView(c, ui.lp(w = 0, weight = 1f))
-    }
-    big("${list.ordered.size}", "articoli")
-    big("${list.boxes}", "colli")
-    big("${list.urgent}", if (list.urgent == 1) "urgenza" else "urgenze", if (list.urgent > 0) C.ORANGE else C.INK)
-    s.addView(sr)
+    body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(14))
     val stateLine = when {
         v == null -> Triple("Lista non ancora scaricata · serve il Wi-Fi", C.MUTED, null)
         sent && v.list?.status == "ordered" -> Triple("Ordinata dall'ufficio acquisti", C.GREEN_INK, Icons.CHECK)
         sent -> Triple("Inviata " + dayTime(v.list!!.submittedAt) + " · modificabile fino a " + shortDay(v.deadline), C.GREEN_INK, Icons.CHECK)
         list.submitted -> Triple("Modificata dopo l'invio: inviala di nuovo", C.AMBER_INK, Icons.ALERT)
-        else -> Triple("Mancano ${countdown(v.deadline)} · si salva da sola", C.MUTED, Icons.CLOCK)
+        else -> null
     }
-    val sl = ui.row()
-    stateLine.third?.let { sl.addView(ui.icon(it, stateLine.second, 16, 2.4f)) }
-    sl.addView(ui.text(stateLine.first, 13f, stateLine.second, ui.medium).oneLine(), ui.lp(w = 0, weight = 1f, start = if (stateLine.third != null) 8 else 0))
-    s.addView(ui.divider(), ui.lp(h = ui.dp(1), top = 12))
-    s.addView(sl, ui.lp(top = 12))
-    body.addView(s)
+    if (stateLine != null) {
+        val sl = ui.row()
+        sl.background = ui.bg(if (stateLine.second == C.GREEN_INK) C.GREEN_SOFT else if (stateLine.second == C.AMBER_INK) C.AMBER_SOFT else 0xFFEEF1F6.toInt(), 12)
+        sl.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+        stateLine.third?.let { sl.addView(ui.icon(it, stateLine.second, 16, 2.4f)) }
+        sl.addView(ui.text(stateLine.first, 13f, stateLine.second, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = if (stateLine.third != null) 8 else 0))
+        body.addView(sl, ui.lp(bottom = 12))
+    }
 
     // filters
     val chk = checks()
@@ -73,7 +76,7 @@ internal fun MainActivity.listTab(): View {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = ui.dp(8) })
     }
     chips.addView(cr)
-    body.addView(chips, ui.lp(top = 14))
+    body.addView(chips)
 
     val warn = chk.associateBy { it.line.ean }
     val rows = when (filter) {
@@ -122,8 +125,8 @@ internal fun MainActivity.listTab(): View {
 
     // send
     val bar = ui.col()
-    bar.setBackgroundColor(C.CANVAS)
-    bar.setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(12))
+    bar.setBackgroundColor(C.CARD)
+    bar.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
     if (toCount.size > 0 && !sent) {
         val w = ui.row()
         w.setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(8))
@@ -137,6 +140,7 @@ internal fun MainActivity.listTab(): View {
         else -> bar.addView(ui.primary(if (list.submitted) "Invia le modifiche" else "Invia la lista · ${list.boxes} colli", C.BLUE, list.ordered.isNotEmpty(), Icons.SEND,
             whyDisabled = { toast("La lista è vuota") }) { confirmSend() })
     }
+    if (v != null && !sent) bar.addView(ui.text("Dopo l'invio puoi ancora modificarla fino a " + shortDay(v.deadline), 12f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 8))
     root.addView(bar)
     return root
 }

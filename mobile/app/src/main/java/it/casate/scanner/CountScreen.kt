@@ -23,14 +23,11 @@ internal fun MainActivity.showCount(ean: String, name: String, sys: StoreInfo, a
 
     val root = ui.col()
     root.setBackgroundColor(C.CANVAS)
-    val head = ui.row()
-    head.setPadding(ui.dp(8), ui.dp(8), ui.dp(16), ui.dp(4))
-    head.addView(ui.iconTap(Icons.BACK, C.INK, "Indietro") { countBack = null; back() })
-    head.addView(ui.text("Conta la giacenza", 20f, C.INK, ui.bold), ui.lp(w = 0, weight = 1f, start = 4))
-    root.addView(head)
+    root.addView(topBar(back = true) { countBack = null; back() })
 
     val body = ui.col()
-    body.setPadding(ui.dp(20), ui.dp(4), ui.dp(20), ui.dp(16))
+    body.setPadding(ui.dp(18), ui.dp(16), ui.dp(18), ui.dp(16))
+    body.addView(ui.text("CONTA LA GIACENZA", 12f, C.MUTED, ui.bold), ui.lp(bottom = 8))
     val pr = ui.row()
     pr.addView(ui.photo(ean, name, 48, C.AMBER_INK))
     val pc = ui.col()
@@ -126,7 +123,7 @@ internal fun MainActivity.showCount(ean: String, name: String, sys: StoreInfo, a
         }
     }
     refresh()
-    showFull(root, dark = false)
+    showFull(root, dark = true)
 }
 
 private fun MainActivity.sendCount(ean: String, name: String, sys: StoreInfo, counted: Int, by: String, after: (Int) -> Unit) {

@@ -2,10 +2,7 @@ package it.casate.scanner
 
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.drawable.GradientDrawable
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
@@ -16,189 +13,236 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 
-/** Faint grid behind the scan window (the "scanner" look). */
-private class Grid(ctx: android.content.Context, private val step: Float) : View(ctx) {
-    private val p = Paint().apply { color = 0x142F6BFF; strokeWidth = 1f }
-    override fun onDraw(c: Canvas) {
-        var x = step
-        while (x < width) { c.drawLine(x, 0f, x, height.toFloat(), p); x += step }
-        var y = step
-        while (y < height) { c.drawLine(0f, y, width.toFloat(), y, p); y += step }
-    }
-}
-
 private var beam: ValueAnimator? = null
 
-/** Tab 1 · Scansiona: the scan window, code / name search, what was just added. Nothing else. */
+/**
+ * Home (v3 look): navy header with this week's list, what is left to do, the scan target, code / name
+ * search, the last lines put in the list, and "Rivedi e invia lista" at the bottom.
+ */
 internal fun MainActivity.scanTab(): View {
     beam?.cancel()
     val root = ui.col()
     root.setBackgroundColor(C.CANVAS)
-
-    // ---------------------------------------------------------------- dark header
     val head = ui.col()
-    head.background = vertical(C.NAVY, 0xFF101B33.toInt())
-    head.setPadding(ui.dp(18), ui.dp(12), ui.dp(10), ui.dp(18))
+    head.setBackgroundColor(C.NAVY)
+    head.setPadding(ui.dp(18), ui.dp(16), ui.dp(18), ui.dp(18))
     val top = ui.row()
+    top.addView(ui.text("C&T", 12f, Color.WHITE, ui.bold).apply { gravity = Gravity.CENTER; background = ui.bg(C.BLUE, 10) }, ui.fixed(34, 34))
     val who = ui.col()
-    who.addView(ui.text(store, 20f, Color.WHITE, ui.bold).oneLine())
-    val v = list.server
-    val sub = listOfNotNull(v?.week?.let { weekNo(it) }, api.deviceName.ifEmpty { null }).joinToString(" · ")
-    who.addView(ui.text(sub, 12f, C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 2))
-    top.addView(who, ui.lp(w = 0, weight = 1f))
-    // connection state: a dot (green online, amber offline / waiting)
+    who.addView(ui.text(store, 16f, Color.WHITE, ui.bold).oneLine())
+    who.addView(ui.text(api.deviceName, 12f, C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 2))
+    top.addView(who, ui.lp(w = 0, weight = 1f, start = 10))
+    val pill = ui.row()
+    pill.background = ui.bg(C.NAVY3, 999)
+    pill.setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6))
     val waiting = list.pending.size
-    val net = ui.row()
-    net.background = ui.bg(0x1FFFFFFF, 999)
-    net.setPadding(ui.dp(10), ui.dp(6), ui.dp(12), ui.dp(6))
-    net.addView(ui.dot(if (offline) C.AMBER else C.MINT, 8), LinearLayout.LayoutParams(ui.dp(8), ui.dp(8)).apply { marginEnd = ui.dp(6) })
-    net.addView(ui.text(when { offline && waiting > 0 -> "Offline · $waiting"; offline -> "Offline"; catalog == null -> "Senza catalogo"; else -> "Online" }, 12f, C.ON_NAVY, ui.medium))
-    top.addView(net)
-    top.addView(ui.iconTap(Icons.MORE, Color.WHITE, "Menu", onDark = true) { menu() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { marginStart = ui.dp(2) })
+    pill.addView(ui.dot(if (offline) C.AMBER else C.MINT, 8))
+    pill.addView(ui.text(when {
+        offline && waiting > 0 -> "Offline · $waiting da inviare"
+        offline -> "Offline"
+        catalog != null -> "Catalogo " + catalogDate()
+        else -> "Senza catalogo"
+    }, 12f, C.ON_NAVY), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 6))
+    ui.tap(pill, 999, true) { menu() }
+    pill.contentDescription = "Menu dello scanner"
+    top.addView(pill, ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT))
     head.addView(top)
 
-    // the scan window
-    val win = FrameLayout(this)
-    win.background = ui.bg(0xFF0E1830.toInt(), 22, 0xFF263556.toInt())
-    win.clipToOutline = true
-    win.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-    win.addView(Grid(this, ui.dpf(18f)), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-    val corners = View(this).apply { background = Corners(C.BLUE, ui.dpf(3f), ui.dpf(26f), ui.dpf(16f), ui.dpf(6f)) }
-    win.addView(corners, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-    val inner = ui.col()
-    inner.gravity = Gravity.CENTER
-    inner.addView(ui.icon(Icons.BARCODE, Color.WHITE, 42, 1.6f), LinearLayout.LayoutParams(ui.dp(42), ui.dp(42)).apply { gravity = Gravity.CENTER_HORIZONTAL })
-    inner.addView(ui.text(if (catalog == null) "Catalogo non ancora scaricato" else "Premi il tasto giallo", 18f, Color.WHITE, ui.bold).apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
-    inner.addView(ui.text(if (catalog == null) "Tocca qui per scaricarlo" else "e inquadra il codice a barre", 13f, C.ON_NAVY_MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 4))
-    win.addView(inner, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-    val laser = FrameLayout(this)
-    laser.addView(View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x002F6BFF, 0x662F6BFF, 0x002F6BFF)) },
-        FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(18)))
-    laser.addView(View(this).apply { setBackgroundColor(0xFF6E97FF.toInt()) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(2), Gravity.CENTER_VERTICAL))
-    win.addView(laser, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(18), Gravity.TOP).apply { setMargins(ui.dp(24), ui.dp(14), ui.dp(24), 0) })
-    if (catalog == null) ui.tap(win, 22, true) { refreshCatalog(true) }
-    head.addView(win, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ui.dp(176)).apply { topMargin = ui.dp(14); marginEnd = ui.dp(8) })
-
-    // code or name
-    val sr = ui.row()
-    sr.background = ui.bg(0x1AFFFFFF, 14, 0x26FFFFFF)
-    sr.setPadding(ui.dp(14), 0, ui.dp(4), 0)
-    sr.addView(ui.icon(Icons.SEARCH, C.ON_NAVY_MUTED, 18, 2f))
-    val results = ui.col()
-    val input = EditText(this).apply {
-        hint = "Codice o nome"
-        setHintTextColor(0xFF7F8BA6.toInt())
-        setTextColor(Color.WHITE)
-        setText(search)
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        setSingleLine()
-        imeOptions = EditorInfo.IME_ACTION_SEARCH
-        textSize = 15f
-        background = null
-        setPadding(ui.dp(10), 0, ui.dp(4), 0)
+    // this week's list
+    val card = ui.col(14)
+    card.background = ui.bg(C.NAVY2, 16, C.NAVY_LINE)
+    val v = list.server
+    val r1 = ui.row()
+    r1.addView(ui.text("LISTA DETERSIVI" + (v?.week?.let { " · " + weekNo(it).uppercase() } ?: ""), 12f, C.ON_NAVY_MUTED, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f))
+    if (v != null) r1.addView(ui.text("chiude " + shortDay(v.deadline), 12f, C.YELLOW, ui.medium))
+    card.addView(r1)
+    val stats = ui.row()
+    fun stat(value: String, label: String, color: Int) {
+        val c = ui.col()
+        c.setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
+        c.addView(ui.num(value, 26f, color))
+        c.addView(ui.text(label, 12f, C.ON_NAVY_MUTED), ui.lp(top = 2))
+        stats.addView(c, ui.lp(w = 0, weight = 1f))
     }
-    sr.addView(input, ui.lp(w = 0, h = ui.dp(48), weight = 1f))
-    sr.addView(ui.iconTap(Icons.CLOSE, C.ON_NAVY_MUTED, "Cancella", onDark = true) { input.setText(""); hideKeyboard(input) })
-    head.addView(sr, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ui.dp(48)).apply { topMargin = ui.dp(12); marginEnd = ui.dp(8) })
+    stat("${list.ordered.size}", "articoli", Color.WHITE)
+    stat("${list.boxes}", "colli", Color.WHITE)
+    stat("${list.urgent}", if (list.urgent == 1) "urgenza" else "urgenze", if (list.urgent > 0) C.CORAL else Color.WHITE)
+    card.addView(stats, ui.lp(top = 8))
+    if (v != null) {
+        val f = ((System.currentTimeMillis() - (v.deadline - 7 * 86_400_000L)).toFloat() / (7 * 86_400_000L)).coerceIn(0.02f, 1f)
+        val bar = ui.row()
+        bar.background = ui.bg(C.NAVY_LINE, 3)
+        bar.addView(View(this).apply { background = ui.bg(C.YELLOW, 3) }, ui.lp(w = 0, h = ui.dp(6), weight = f))
+        bar.addView(View(this), ui.lp(w = 0, h = ui.dp(6), weight = 1f - f + 0.0001f))
+        card.addView(bar, ui.lp(h = ui.dp(6), top = 10))
+    }
+    val line = when {
+        v == null -> "Lista non ancora scaricata: serve il Wi-Fi"
+        list.submitted && list.changedSinceSubmit -> "Inviata, poi modificata · inviala di nuovo"
+        list.submitted -> "Inviata " + dayTime(v.list!!.submittedAt) + " · modificabile per " + countdown(v.deadline)
+        else -> "Mancano " + countdown(v.deadline) + " · la lista si salva da sola"
+    }
+    card.addView(ui.text(line, 12f, if (list.submitted && !list.changedSinceSubmit) C.MINT else C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 8))
+    ui.tap(card, 16, true) { go(MainActivity.Tab.LIST) }
+    head.addView(card, ui.lp(top = 16))
     root.addView(head)
 
-    // ---------------------------------------------------------------- light body
     val body = ui.col()
-    body.setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(16))
-    val rest = ui.col()   // everything below the search results (hidden while searching)
+    body.setPadding(ui.dp(18), ui.dp(16), ui.dp(18), ui.dp(12))
+    val rest = ui.col()
     flash?.let { msg ->
         flash = null
         val b = ui.row()
         b.background = ui.bg(C.GREEN_SOFT, 14)
-        b.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
+        b.setPadding(ui.dp(14), ui.dp(11), ui.dp(14), ui.dp(11))
         b.addView(ui.icon(Icons.CHECK, C.GREEN_INK, 18, 2.6f))
-        b.addView(ui.text(msg, 14f, C.GREEN_INK, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = 10))
+        b.addView(ui.text(msg, 14f, C.GREEN_INK, ui.bold).lines(2), ui.lp(w = 0, weight = 1f, start = 10))
+        ui.tap(b, 14) { go(MainActivity.Tab.LIST) }
         rest.addView(b, ui.lp(bottom = 12))
         b.alpha = 0f
-        b.animate().alpha(1f).setDuration(220).start()
-        main.postDelayed({ b.animate().alpha(0f).setDuration(300).withEndAction { b.visibility = View.GONE }.start() }, 3500)
+        b.animate().alpha(1f).setDuration(200).start()
     }
     update?.let { u ->
         val b = ui.row()
-        b.background = ui.bg(C.BLUE_SOFT, 14)
-        b.setPadding(ui.dp(14), ui.dp(4), ui.dp(4), ui.dp(4))
+        b.background = ui.bg(C.BLUE_SOFT, 14, 0xFFC6D5FF.toInt())
+        b.setPadding(ui.dp(14), ui.dp(8), ui.dp(8), ui.dp(8))
         b.addView(ui.icon(Icons.REFRESH, C.BLUE_INK, 18, 2.2f))
-        b.addView(ui.text("Nuova versione ${u.versionName}", 14f, C.BLUE_INK, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = 10))
-        b.addView(ui.outline("Aggiorna", C.BLUE_INK, 0xFFC6D5FF.toInt()) { startUpdate(u) })
+        val t = ui.col()
+        t.addView(ui.text("Nuova versione dell'app · ${u.versionName}", 14f, C.BLUE_INK, ui.bold).oneLine())
+        t.addView(ui.text("Un minuto · lista e collegamento restano", 12f, C.BLUE_INK).oneLine(), ui.lp(top = 1))
+        b.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+        b.addView(ui.button("Aggiorna", C.BLUE, size = 14f) { startUpdate(u) }.apply { setPadding(ui.dp(16), 0, ui.dp(16), 0) },
+            ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, h = ui.dp(40)))
         rest.addView(b, ui.lp(bottom = 12))
     }
-    // this week's list in one card: tap = the List tab
-    val lc = ui.card(18)
-    lc.setPadding(ui.dp(16), ui.dp(14), ui.dp(12), ui.dp(14))
-    val lr = ui.row()
-    val lt = ui.col()
-    lt.addView(ui.caption("Lista della settimana"))
-    val nums = ui.row(Gravity.BOTTOM)
-    nums.addView(ui.num("${list.ordered.size}", 24f))
-    nums.addView(ui.text(" articoli   ", 13f, C.MUTED))
-    nums.addView(ui.num("${list.boxes}", 24f))
-    nums.addView(ui.text(" colli", 13f, C.MUTED))
-    lt.addView(nums, ui.lp(top = 6))
-    lr.addView(lt, ui.lp(w = 0, weight = 1f))
-    val state = when {
-        v == null -> ui.pill("NON SCARICATA", C.MUTED, 0xFFEEF1F6.toInt())
-        list.submitted && !list.changedSinceSubmit -> ui.pill("INVIATA", C.GREEN_INK, C.GREEN_SOFT)
-        list.submitted -> ui.pill("DA REINVIARE", C.AMBER_INK, C.AMBER_SOFT)
-        else -> ui.pill("CHIUDE " + shortDay(v.deadline).uppercase(), C.BLUE_INK, C.BLUE_SOFT)
-    }
-    lr.addView(state)
-    lr.addView(ui.icon(Icons.NEXT, C.FAINT, 18, 2.2f), LinearLayout.LayoutParams(ui.dp(18), ui.dp(18)).apply { marginStart = ui.dp(6) })
-    lc.addView(lr)
-    if (v != null && !list.submitted) {
-        val f = ((System.currentTimeMillis() - (v.deadline - 7 * 86_400_000L)).toFloat() / (7 * 86_400_000L)).coerceIn(0.02f, 1f)
-        val bar = ui.row()
-        bar.background = ui.bg(0xFFE9EDF3.toInt(), 3)
-        bar.addView(View(this).apply { background = ui.bg(if (f > 0.85f) C.RED else C.BLUE, 3) }, ui.lp(w = 0, h = ui.dp(5), weight = f))
-        bar.addView(View(this), ui.lp(w = 0, h = ui.dp(5), weight = 1f - f + 0.0001f))
-        lc.addView(bar, ui.lp(h = ui.dp(5), top = 12))
-        lc.addView(ui.text("Mancano ${countdown(v.deadline)}", 12f, if (f > 0.85f) C.RED_INK else C.MUTED, ui.medium), ui.lp(top = 6))
-    }
-    ui.tap(lc, 18) { go(MainActivity.Tab.LIST) }
-    rest.addView(lc)
 
-    // the last items put in the list
+    // what is left to do before sending
+    val nCount = toCount.size
+    val nCheck = checks().size
+    val back = backInStock()
+    if (nCount > 0 || nCheck > 0 || back.isNotEmpty()) {
+        val c = ui.col()
+        c.background = ui.bg(C.CARD, 16, C.LINE)
+        c.setPadding(ui.dp(14), ui.dp(10), ui.dp(10), ui.dp(4))
+        c.addView(ui.text("DA FARE PRIMA DI INVIARE", 12f, C.MUTED, ui.bold))
+        fun todo(icon: Icons.Spec, fg: Int, fill: Int, title: String, sub: String, count: Int) {
+            val r = ui.row()
+            r.setPadding(0, ui.dp(8), 0, ui.dp(8))
+            r.addView(ui.iconBadge(icon, fill, fg, 34, 18, 2.2f))
+            val t = ui.col()
+            t.addView(ui.text(title, 14f, C.INK, ui.bold).oneLine())
+            t.addView(ui.text(sub, 12f, C.MUTED).oneLine(), ui.lp(top = 1))
+            r.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+            r.addView(ui.num("$count", 15f, fg))
+            r.addView(ui.icon(Icons.NEXT, C.FAINT, 16, 2.2f), LinearLayout.LayoutParams(ui.dp(16), ui.dp(16)).apply { marginStart = ui.dp(6) })
+            ui.tap(r, 10) { go(MainActivity.Tab.TASKS) }
+            c.addView(r)
+        }
+        if (nCount > 0) todo(Icons.LIST, C.AMBER_INK, C.AMBER_SOFT, "Da contare", "Conta la giacenza: l'ufficio la corregge", nCount)
+        if (nCheck > 0) todo(Icons.ALERT, C.AMBER_INK, C.AMBER_SOFT, "Da controllare", "Scorta alta, già in arrivo o non più ordinabile", nCheck)
+        if (back.isNotEmpty()) todo(Icons.REFRESH, C.GREEN_INK, C.GREEN_SOFT, "Di nuovo disponibili", "Li avevi chiesti: ora si possono ordinare", back.size)
+        rest.addView(c, ui.lp(bottom = 12))
+    }
+
+    // scan target: corner marks + moving beam
+    val target = FrameLayout(this)
+    target.background = android.graphics.drawable.LayerDrawable(arrayOf(ui.bg(C.CARD, 20, C.LINE), Corners(C.BLUE, ui.dpf(3f), ui.dpf(26f), ui.dpf(18f), ui.dpf(6f))))
+    val inner = ui.col()
+    inner.gravity = Gravity.CENTER
+    inner.addView(ui.icon(Icons.BARCODE, C.INK, 46, 1.6f), LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+    inner.addView(ui.text(if (catalog == null) "Catalogo non ancora scaricato" else "Premi il tasto giallo", 17f, C.INK, ui.bold).apply { gravity = Gravity.CENTER }, ui.lp(top = 8))
+    inner.addView(ui.text(if (catalog == null) "Collegati al Wi-Fi: si scarica da solo" else "e inquadra il codice a barre", 13f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 4))
+    target.addView(inner, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    val laser = FrameLayout(this)
+    laser.addView(View(this).apply {
+        background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x002F6BFF, 0x552F6BFF, 0x002F6BFF))
+    }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(16)))
+    laser.addView(View(this).apply { setBackgroundColor(C.BLUE) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(2), Gravity.CENTER_VERTICAL))
+    target.addView(laser, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(16), Gravity.TOP).apply { setMargins(ui.dp(30), ui.dp(18), ui.dp(30), 0) })
+    if (catalog == null) ui.tap(target, 20) { refreshCatalog(true) }
+    rest.addView(target, ui.lp(h = ui.dp(170)))
+
+    // code or name
+    val results = ui.col()
+    val sr = ui.row()
+    sr.background = ui.bg(C.CARD, 14, C.LINE)
+    sr.setPadding(ui.dp(12), 0, ui.dp(6), 0)
+    sr.addView(ui.icon(Icons.SEARCH, C.MUTED, 18, 2f))
+    val input = EditText(this).apply {
+        hint = "Codice o nome dell'articolo"
+        setHintTextColor(C.FAINT)
+        setTextColor(C.INK)
+        setText(search)
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        setSingleLine()
+        imeOptions = EditorInfo.IME_ACTION_SEARCH
+        textSize = 14f
+        background = null
+        setPadding(ui.dp(8), 0, ui.dp(4), 0)
+    }
+    sr.addView(input, ui.lp(w = 0, h = ui.dp(46), weight = 1f))
+    val clear = ui.icon(Icons.CLOSE, C.FAINT, 34, 2f).apply { setPadding(ui.dp(9), ui.dp(9), ui.dp(9), ui.dp(9)); contentDescription = "Cancella" }
+    ui.tap(clear, 999) { input.setText(""); hideKeyboard(input) }
+    sr.addView(clear, ui.fixed(34, 34))
+
+    // the last lines put in the list
+    val lastBox = ui.col()
     val last = list.lines().take(4)
     if (last.isNotEmpty()) {
-        rest.addView(ui.caption("Ultimi aggiunti"), ui.lp(top = 18))
-        val card = ui.card(18)
-        card.setPadding(ui.dp(12), ui.dp(2), ui.dp(12), ui.dp(2))
+        val hr = ui.row()
+        hr.addView(ui.text("ULTIMI IN LISTA", 12f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f))
+        val all = ui.row()
+        all.setPadding(ui.dp(8), ui.dp(6), ui.dp(4), ui.dp(6))
+        all.addView(ui.text("Vedi tutti", 12f, C.BLUE, ui.bold))
+        all.addView(ui.icon(Icons.NEXT, C.BLUE, 14, 2.4f))
+        ui.tap(all, 8) { go(MainActivity.Tab.LIST) }
+        hr.addView(all)
+        lastBox.addView(hr, ui.lp(top = 14))
         for ((i, l) in last.withIndex()) {
-            if (i > 0) card.addView(ui.divider(52))
-            val trail = if (l.kind == "remind") ui.chip("AVVISO", C.AMBER_INK, C.AMBER_SOFT, 10f) else ui.num("${l.boxes}", 16f)
-            card.addView(ui.listRow(ui.photo(l.ean, l.name, 40, lineColor(l.kind)), l.name.ifEmpty { l.ean },
-                when (l.kind) { "urgent" -> "Urgenza"; "sub" -> "Sostituto"; "remind" -> "Avvisami quando torna"; else -> colli(l.boxes) + (packOf(l.ean)?.let { " · ${n(it * l.boxes)} pz" } ?: "") },
-                if (l.kind == "urgent") C.ORANGE else C.MUTED, trail) { openItem(l.origEan ?: l.ean) })
+            val r = ui.row()
+            r.setPadding(ui.dp(2), 0, ui.dp(2), 0)
+            r.addView(ui.dot(lineColor(l.kind)))
+            r.addView(ui.text(l.name.ifEmpty { l.ean }, 14f, C.INK, ui.medium).oneLine(), ui.lp(w = 0, weight = 1f, start = 10))
+            when (l.kind) {
+                "urgent" -> r.addView(ui.chip("URGENZA", C.ORANGE, C.ORANGE_SOFT, 11f))
+                "remind" -> r.addView(ui.chip("DA RICORDARE", C.AMBER_INK, C.AMBER_SOFT, 11f))
+                else -> {
+                    r.addView(ui.num("${l.boxes}", 14f))
+                    r.addView(ui.text(" " + colli(l.boxes), 12f, C.MUTED))
+                }
+            }
+            ui.tap(r, 8) { openItem(l.origEan ?: l.ean) }
+            if (i > 0) lastBox.addView(ui.divider())
+            lastBox.addView(r, ui.lp(h = ui.dp(44), top = if (i == 0) 4 else 0))
         }
-        rest.addView(card, ui.lp(top = 8))
     }
-    body.addView(results)
     body.addView(rest)
+    body.addView(sr, ui.lp(h = ui.dp(48), top = 12))
+    body.addView(results)
+    body.addView(lastBox)
 
     fun searchNow(q: String) {
         search = q
         results.removeAllViews()
         val t = q.trim()
         val cat = catalog
-        rest.visibility = if (t.length >= 2) View.GONE else View.VISIBLE
-        if (cat == null || t.length < 2 || (t.all { it.isDigit() } && t.length < 4)) return
-        val found = cat.search(t, 30)
-        val card = ui.card(18)
-        card.setPadding(ui.dp(12), ui.dp(2), ui.dp(12), ui.dp(2))
-        if (found.isEmpty()) card.addView(ui.text("Nessun articolo", 14f, C.MUTED).apply { setPadding(ui.dp(4), ui.dp(16), 0, ui.dp(16)) })
+        val searching = t.length >= 2
+        rest.visibility = if (searching) View.GONE else View.VISIBLE
+        lastBox.visibility = if (searching) View.GONE else View.VISIBLE
+        if (cat == null || !searching || (t.all { it.isDigit() } && t.length < 4)) return
+        val found = cat.search(t, 25)
+        val c = ui.col()
+        c.background = ui.bg(C.CARD, 14, C.LINE)
+        c.setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4))
+        if (found.isEmpty()) c.addView(ui.text("Nessun articolo trovato", 13f, C.MUTED).apply { setPadding(ui.dp(4), ui.dp(12), 0, ui.dp(12)) })
         for ((i, it) in found.withIndex()) {
-            if (i > 0) card.addView(ui.divider(52))
+            if (i > 0) c.addView(ui.divider())
             val k = Catalog.judgeItem(it).kind
-            card.addView(ui.listRow(ui.photo(it.ean, it.name, 40, kindColor(k)), it.name, it.ean, C.MUTED, ui.dot(kindColor(k), 10)) {
+            c.addView(ui.listRow(ui.photo(it.ean, it.name, 40, kindColor(k)), it.name, it.ean, C.MUTED, ui.dot(kindColor(k), 8)) {
                 hideKeyboard(input); openItem(it.ean)
             })
         }
-        results.addView(ui.caption("Risultati · ${found.size}"))
-        results.addView(card, ui.lp(top = 8))
+        results.addView(c, ui.lp(top = 8))
     }
     var run: Runnable? = null
     input.setOnEditorActionListener { tv, actionId, event ->
@@ -214,19 +258,25 @@ internal fun MainActivity.scanTab(): View {
         override fun afterTextChanged(e: android.text.Editable?) {
             run?.let { main.removeCallbacks(it) }
             val q = e?.toString().orEmpty()
-            run = Runnable { searchNow(q) }.also { main.postDelayed(it, 200) }
+            run = Runnable { searchNow(q) }.also { main.postDelayed(it, 220) }
         }
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
     })
     if (search.isNotEmpty()) searchNow(search)
-    root.addView(ScrollView(this).apply { addView(body) }, ui.lp(h = 0, weight = 1f))
+    root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, ui.lp(h = 0, weight = 1f))
 
-    // the beam sweeps while the screen waits for a scan
-    win.post {
-        val range = (win.height - ui.dp(46)).toFloat().coerceAtLeast(1f)
+    val bar = ui.col()
+    bar.setBackgroundColor(C.CARD)
+    bar.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
+    val sent = list.submitted && !list.changedSinceSubmit
+    bar.addView(ui.iconButton(if (sent) "Vedi la lista inviata" else "Rivedi e invia lista", Icons.ARROW, C.NAVY, after = true) { go(MainActivity.Tab.LIST) }, ui.lp(h = ui.dp(52)))
+    root.addView(bar)
+
+    target.post {
+        val range = (target.height - ui.dp(52)).toFloat().coerceAtLeast(1f)
         beam = ObjectAnimator.ofFloat(laser, "translationY", 0f, range).apply {
-            duration = 1500; repeatMode = ValueAnimator.REVERSE; repeatCount = ValueAnimator.INFINITE; start()
+            duration = 1300; repeatMode = ValueAnimator.REVERSE; repeatCount = ValueAnimator.INFINITE; start()
         }
     }
     return root
