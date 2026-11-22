@@ -100,4 +100,19 @@ class StoreListTest {
         assertEquals(listOf("Promozione o volantino", "Richiesto da un cliente", "Giacenza sbagliata", "Più spazio a scaffale"),
             Feedbacks.byUse(listOf("Giacenza sbagliata", "Promozione o volantino", "Più spazio a scaffale", "Richiesto da un cliente"), saved))
     }
+
+    @Test
+    fun countLaterListKeptAndSaved() {
+        val t = ToCount()
+        t.add("8001", "SVELTO", 1)
+        t.add("0008002", "DIXAN\t40", 2)
+        t.add("8001", "SVELTO", 3)          // again: one entry, newer
+        assertEquals(2, t.size)
+        assertTrue(t.has("08001") && t.has("8002"))
+        val back = ToCount(t.save())
+        assertEquals(listOf("8001", "0008002"), back.all().map { it.ean })
+        assertEquals("DIXAN 40", back.all()[1].name)
+        assertTrue(back.remove("8002"))
+        assertFalse(back.has("8002"))
+    }
 }

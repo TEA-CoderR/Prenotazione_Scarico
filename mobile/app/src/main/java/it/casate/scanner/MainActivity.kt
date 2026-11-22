@@ -131,7 +131,7 @@ class MainActivity : Activity() {
             Screen.RESULT -> goBack()
             Screen.LINES -> linesBack()
             Screen.REVIEW, Screen.SENT -> showHome()
-            Screen.COUNT -> { afterStock = null; showResult() }
+            Screen.COUNT -> { afterStock = null; val r = countReturn; countReturn = null; if (r != null) r() else showResult() }
             else -> super.onBackPressed()
         }
     }
@@ -423,6 +423,19 @@ class MainActivity : Activity() {
             body.addView(ui.spacer(12))
         }
 
+        // items to count later
+        if (toCount.size > 0) {
+            val b = ui.row()
+            b.background = ui.bg(C.AMBER_SOFT, 14, C.AMBER_LINE)
+            b.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
+            b.addView(ui.icon(Icons.LIST, C.AMBER_INK, 18, 2.2f))
+            b.addView(ui.text("Da contare: ${toCount.size} " + (if (toCount.size == 1) "articolo" else "articoli"), 14f, C.AMBER_INK, ui.bold), ui.lp(w = 0, weight = 1f, start = 10))
+            b.addView(ui.icon(Icons.NEXT, C.AMBER_INK, 18, 2.2f))
+            ui.tap(b, 14) { showToCount { showHome() } }
+            body.addView(b)
+            body.addView(ui.spacer(12))
+        }
+
         // scan target: corner marks + moving beam
         val target = FrameLayout(this)
         target.background = android.graphics.drawable.LayerDrawable(arrayOf(ui.bg(C.CARD, 20, C.LINE), Corners(C.BLUE, ui.dpf(3f), ui.dpf(26f), ui.dpf(18f), ui.dpf(6f))))
@@ -515,6 +528,7 @@ class MainActivity : Activity() {
                     else -> {
                         r.addView(ui.num("${l.boxes}", 14f))
                         r.addView(ui.text(" " + colli(l.boxes), 12f, C.MUTED))
+                        packOf(l.ean)?.let { r.addView(ui.text(" · ${n(it * l.boxes)} pz", 12f, C.MUTED)) }
                     }
                 }
                 ui.tap(r, 8) { openScan(l.origEan ?: l.ean, null) }
@@ -950,6 +964,16 @@ class MainActivity : Activity() {
         sys ?: return
         val c = ui.col(14)
         val recount = { showCount(ean, name, sys) }
+        val later = toCount.has(ean)
+        fun twoButtons(fg: Int, line: Int) {
+            val r = ui.row()
+            r.addView(ui.button("Conta adesso", 0, fg, line, 14f) { recount() }, ui.lp(w = 0, h = ui.dp(42), weight = 1f))
+            r.addView(ui.button(if (later) "Da contare ✓" else "Conta dopo", 0, fg, line, 14f) {
+                if (later) { toCount.remove(ean); saveToCount() } else countLater(ean, name)
+                redraw()
+            }, ui.lp(w = 0, h = ui.dp(42), weight = 1f, start = 8))
+            c.addView(r, ui.lp(top = 10))
+        }
         when {
             rep?.status == "open" -> {
                 c.background = ui.bg(C.BLUE_SOFT, 14, 0xFFC6D5FF.toInt())
@@ -965,7 +989,7 @@ class MainActivity : Activity() {
                 c.background = ui.bg(C.RED_BG, 14, 0xFFF7C6C0.toInt())
                 c.addView(ui.text("Segnalazione respinta", 14f, C.RED_INK, ui.bold))
                 c.addView(ui.text(rep.answer.ifEmpty { "Chiedi all'ufficio acquisti" }, 12f, C.RED_INK), ui.lp(top = 4))
-                c.addView(ui.button("Conta di nuovo", 0, C.RED_INK, C.RED, 14f) { recount() }, ui.lp(h = ui.dp(42), top = 10))
+                twoButtons(C.RED_INK, C.RED)
             }
             sys.suspect && (sys.stock ?: 0.0) > 0 -> {
                 c.background = ui.bg(C.AMBER_SOFT, 14, C.AMBER_LINE)
@@ -973,13 +997,20 @@ class MainActivity : Activity() {
                 val d = sys.lastSaleDays
                 c.addView(ui.text("A sistema ${n(sys.stock)} pz, ma " + (if (d != null) "nessuna vendita da $d giorni" else "non si vende da molto") +
                     ". Guarda sullo scaffale e in magazzino.", 12f, C.AMBER_INK), ui.lp(top = 4))
-                c.addView(ui.button("Conta e segnala", 0, C.AMBER_INK, C.AMBER, 14f) { recount() }, ui.lp(h = ui.dp(42), top = 10))
+                twoButtons(C.AMBER_INK, C.AMBER)
             }
             else -> {
                 val r = ui.row()
-                r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
-                r.addView(ui.button("Giacenza sbagliata?", 0, C.MUTED, size = 13f) { recount() }.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) },
-                    ui.lp(w = ui.WRAP, h = ui.dp(36)))
+                if (later) {
+                    r.addView(ui.chip("Da contare dopo", C.AMBER_INK, C.AMBER_SOFT, 12f), ui.lp(w = ui.WRAP))
+                    r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+                    r.addView(ui.button("Conta adesso", 0, C.AMBER_INK, size = 13f) { recount() }.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) },
+                        ui.lp(w = ui.WRAP, h = ui.dp(36)))
+                } else {
+                    r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+                    r.addView(ui.button("Giacenza sbagliata?", 0, C.MUTED, size = 13f) { countChoice(ean, name, sys) }.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) },
+                        ui.lp(w = ui.WRAP, h = ui.dp(36)))
+                }
                 body.addView(r, ui.lp(top = 8))
                 return
             }
@@ -1203,6 +1234,7 @@ class MainActivity : Activity() {
             main.post {
                 dlg.dismiss()
                 val e = r.exceptionOrNull()
+                if (e == null && toCount.remove(ean)) saveToCount()
                 when {
                     e == null && afterStock != null -> {
                         list.applied(r.getOrThrow(), emptyList())
@@ -1418,6 +1450,95 @@ class MainActivity : Activity() {
     /** Set while a stock count was opened from the "why" sheet: after the report the item goes in the list. */
     private var afterStock: ((Int) -> Unit)? = null
 
+    /** Where Back goes from the count screen (the "to count" list), when not the product. */
+    private var countReturn: (() -> Unit)? = null
+
+    /** Items marked "count later" (kept on this scanner). */
+    private val toCount: ToCount by lazy { ToCount(api.toCount) }
+    private fun saveToCount() { api.toCount = toCount.save() }
+
+    private fun countLater(ean: String, name: String) {
+        toCount.add(ean, name, System.currentTimeMillis())
+        saveToCount()
+    }
+
+    /** Pieces per box: this store's number, else the catalog's (Griglia, wholesaler or direct supplier). */
+    private fun packOf(ean: String): Double? =
+        catalog?.info(ean)?.pack?.takeIf { it > 0 } ?: catalog?.find(ean)?.pack?.takeIf { it > 0 }
+
+    private fun piecesText(ean: String, boxes: Int): String =
+        packOf(ean)?.let { "${n(it)} pz/collo · ${n(it * boxes)} pz" } ?: ""
+
+    /** Count now (stops the order for a moment) or put it in the "to count" list and go on ordering. */
+    private fun countChoice(ean: String, name: String, sys: StoreInfo) {
+        AlertDialog.Builder(this).setTitle("Giacenza sbagliata?")
+            .setItems(arrayOf("Conta adesso", "Conta dopo · continuo a ordinare")) { _, w ->
+                if (w == 0) showCount(ean, name, sys) else {
+                    countLater(ean, name)
+                    android.widget.Toast.makeText(this, "Da contare dopo · ${toCount.size}", android.widget.Toast.LENGTH_SHORT).show()
+                    redraw()
+                }
+            }.setNegativeButton("Annulla", null).show()
+    }
+
+    // ================================================================== to count later
+    private fun showToCount(back: () -> Unit) {
+        pending = null
+        linesBack = back
+        redraw = { showToCount(back) }
+        val items = toCount.all()
+        val root = page()
+        root.addView(header("Da contare", "${items.size} articoli · contali tutti insieme", C.ON_NAVY_MUTED) { back() })
+        val body = ui.col()
+        body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(14))
+        if (items.isEmpty()) {
+            val e = ui.col(24)
+            e.gravity = Gravity.CENTER_HORIZONTAL
+            e.background = ui.dashed(0xFFC4CCDA.toInt(), C.CARD, 16)
+            e.addView(ui.text("Niente da contare", 16f, C.INK, ui.bold).apply { gravity = Gravity.CENTER })
+            e.addView(ui.text("Durante l'ordine tocca «Giacenza sbagliata?» → Conta dopo", 13f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 4))
+            body.addView(e)
+        } else {
+            val card = ui.col()
+            card.background = ui.bg(C.CARD, 16, C.LINE)
+            card.setPadding(ui.dp(10), ui.dp(2), ui.dp(8), ui.dp(2))
+            for ((i, it) in items.withIndex()) {
+                if (i > 0) card.addView(divider())
+                val sys = catalog?.info(it.ean)
+                val r = ui.row()
+                r.setPadding(0, ui.dp(8), 0, ui.dp(8))
+                r.addView(ui.photo(it.ean, it.name, 44, C.AMBER_INK))
+                val c = ui.col()
+                c.addView(ui.text(it.name.ifEmpty { it.ean }, 14f, C.INK, ui.medium).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+                c.addView(ui.text((if (sys != null) "A sistema ${n(sys.stock)} pz" else "Dati del negozio non ancora pubblicati") +
+                    " · segnato " + dayTime(it.at, false), 11f, C.MUTED), ui.lp(top = 2))
+                r.addView(c, ui.lp(w = 0, weight = 1f, start = 10))
+                val x = ui.icon(Icons.CLOSE, C.MUTED, 38, 2.2f).apply {
+                    setPadding(ui.dp(11), ui.dp(11), ui.dp(11), ui.dp(11))
+                    background = ui.bg(C.CARD, 10, C.LINE2)
+                    contentDescription = "Togli dalla lista da contare"
+                }
+                ui.tap(x, 10) { toCount.remove(it.ean); saveToCount(); redraw() }
+                r.addView(x, ui.fixed(38, 38, 6))
+                if (sys != null) {
+                    r.addView(ui.button("Conta", C.AMBER, 0xFF2B1A00.toInt(), size = 14f) {
+                        countReturn = { showToCount(back) }
+                        afterStock = { counted ->
+                            countReturn = null
+                            android.widget.Toast.makeText(this, "Segnalato: $counted pz", android.widget.Toast.LENGTH_SHORT).show()
+                            showToCount(back)
+                        }
+                        showCount(it.ean, it.name, sys)
+                    }, ui.lp(w = ui.dp(84), h = ui.dp(38), start = 6))
+                }
+                card.addView(r)
+            }
+            body.addView(card)
+        }
+        root.addView(scroll(body), ui.lp(h = 0, weight = 1f))
+        show(root, Screen.LINES)
+    }
+
     /**
      * The purchasing program would not order it (enough stock, already coming): the store knows better what
      * is on the shelf, so instead of the office checking it later the store says why — with one tap.
@@ -1470,10 +1591,18 @@ class MainActivity : Activity() {
         // the reasons this scanner uses most come first (in promotion weeks "Promozione" is on top)
         val opts = LinkedHashMap<String, () -> Unit>()
         if (sys != null) opts["Giacenza sbagliata"] = {
-            option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno: conta e segnala") {
-                dlg.dismiss()
-                afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
-                showCount(ean, name, sys)
+            option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno: conta adesso o dopo") {
+                AlertDialog.Builder(this).setTitle("La giacenza è sbagliata")
+                    .setItems(arrayOf("Conta adesso e aggiungi", "Aggiungi ora · conta dopo")) { _, w ->
+                        if (w == 0) {
+                            dlg.dismiss()
+                            afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
+                            showCount(ean, name, sys)
+                        } else {
+                            countLater(ean, name)
+                            add("Giacenza da verificare · da contare", "Da contare dopo · ")
+                        }
+                    }.setNegativeButton("Annulla", null).show()
             }
         }
         opts["Promozione o volantino"] = { option(Icons.TAG, C.ORANGE, C.ORANGE_SOFT, "Promozione o volantino", "Ne servono di più per l'offerta") { add("Promozione o volantino") } }
@@ -1687,6 +1816,18 @@ class MainActivity : Activity() {
         body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(14))
         val lines = list.lines()
         val chk = checks()
+        if (toCount.size > 0) {
+            val r = ui.row()
+            r.background = ui.bg(C.AMBER_SOFT, 12, C.AMBER_LINE)
+            r.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            r.addView(ui.icon(Icons.LIST, C.AMBER_INK, 18, 2.2f))
+            r.addView(ui.text("${toCount.size} da contare: conta prima di inviare, così l'ufficio usa la giacenza giusta", 13f, C.AMBER_INK, ui.bold),
+                ui.lp(w = 0, weight = 1f, start = 10))
+            r.addView(ui.icon(Icons.NEXT, C.AMBER_INK, 16, 2.2f))
+            ui.tap(r, 12) { showToCount { showReview() } }
+            body.addView(r)
+            body.addView(ui.spacer(12))
+        }
         if (chk.isNotEmpty()) {
             body.addView(ui.text("DA CONTROLLARE · ${chk.size}", 12f, C.AMBER_INK, ui.bold))
             for (c in chk) {
@@ -1859,6 +2000,7 @@ class MainActivity : Activity() {
             else -> l.reason?.let { "Motivo · $it" } ?: l.ean
         } + (if (!l.updatedBy.isNullOrEmpty() && l.updatedBy != api.deviceName) " · ${l.updatedBy}" else "")
         c.addView(ui.text(sub, 11f, if (l.kind == "urgent") C.RED_INK else C.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, ui.lp(top = 2))
+        if (l.kind != "remind") piecesText(l.ean, l.boxes).takeIf { it.isNotEmpty() }?.let { c.addView(ui.num(it, 11f, C.INK), ui.lp(top = 2)) }
         left.addView(c, ui.lp(w = 0, weight = 1f, start = 10))
         ui.tap(left, 10) { openScan(l.origEan ?: l.ean, redraw) }
         r.addView(left, ui.lp(w = 0, weight = 1f))
