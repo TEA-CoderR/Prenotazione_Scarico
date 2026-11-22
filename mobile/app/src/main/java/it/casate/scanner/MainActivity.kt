@@ -869,6 +869,7 @@ class MainActivity : Activity() {
             }
         }
 
+        if (v.kind == Kind.ORDER || v.kind == Kind.SUBSTITUTE || v.kind == Kind.URGENT_ONLY) lastWeek(body, target)
         when (v.kind) {
             Kind.ORDER -> body.addView(stepper(p, info, pack), ui.lp(top = 14))
             Kind.SUBSTITUTE -> {}
@@ -915,9 +916,9 @@ class MainActivity : Activity() {
                     else -> "Aggiungi ${p.boxes} ${colli(p.boxes)}"
                 }
                 val icon = if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS
-                val ask = !inIt && needsWhy(v, info, rep)
+                val ask = needsWhy(v, info, rep, p.boxes) && (!inIt || (Feedbacks.overOrder(info?.suggestBoxes, p.boxes) && !Feedbacks.overOrder(info?.suggestBoxes, inList!!.boxes)))
                 r.addView(ui.iconButton(label, icon, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN) {
-                    if (ask) return@iconButton whySheet(target, item?.name ?: target, info!!, sysInfo)
+                    if (ask) return@iconButton whySheet(target, item?.name ?: target, info!!, sysInfo, p.boxes)
                     val msg = commit()
                     if (msg != null) beep(Kind.ORDER)
                     done(msg)
@@ -1338,8 +1339,8 @@ class MainActivity : Activity() {
         } else if (info != null && info.suggestBoxes == 0) {
             head.addView(ui.chip("Il sistema non lo ordinerebbe", C.AMBER_INK, C.AMBER_SOFT, 11f))
         }
-        val askWhy = needsWhy(p.verdict, info, list.report(targetEan(p.verdict, p.scan))) &&
-            (list.line(targetEan(p.verdict, p.scan))?.boxes ?: 0) == 0
+        val askWhy = needsWhy(p.verdict, info, list.report(targetEan(p.verdict, p.scan)), p.boxes) &&
+            ((list.line(targetEan(p.verdict, p.scan))?.boxes ?: 0).let { had -> had == 0 || (Feedbacks.overOrder(info?.suggestBoxes, p.boxes) && !Feedbacks.overOrder(info?.suggestBoxes, had)) })
         c.addView(head)
         c.addView(stepRow(p, pack, 64, 44f), ui.lp(top = 14))
         if (askWhy) c.addView(ui.text("Se lo aggiungi ti chiediamo il motivo (un tocco)", 12f, C.AMBER_INK).apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
@@ -1421,14 +1422,14 @@ class MainActivity : Activity() {
      * The purchasing program would not order it (enough stock, already coming): the store knows better what
      * is on the shelf, so instead of the office checking it later the store says why — with one tap.
      */
-    private fun needsWhy(v: Verdict, info: StoreInfo?, rep: StockReport?): Boolean {
+    private fun needsWhy(v: Verdict, info: StoreInfo?, rep: StockReport?, boxes: Int): Boolean {
         if (v.kind != Kind.ORDER && v.kind != Kind.SUBSTITUTE) return false
         info ?: return false
         if (rep?.status == "open") return false          // stock already being corrected: the count is used
-        return info.suggestBoxes == 0 || Catalog.overstocked(info)
+        return info.suggestBoxes == 0 || Catalog.overstocked(info) || Feedbacks.overOrder(info.suggestBoxes, boxes)
     }
 
-    private fun whySheet(ean: String, name: String, info: StoreInfo, sys: StoreInfo?) {
+    private fun whySheet(ean: String, name: String, info: StoreInfo, sys: StoreInfo?, boxes: Int) {
         val dlg = Dialog(this)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val sheet = ui.col()
@@ -1442,9 +1443,12 @@ class MainActivity : Activity() {
             cover != null -> "A sistema ${n(info.stock)} pz: bastano ${Catalog.months(cover)}"
             else -> "A sistema ${n(info.stock)} pz e si vende poco"
         }
-        sheet.addView(ui.text("Il sistema non lo ordinerebbe · $why. Lo vede l'ufficio acquisti.", 13f, C.MUTED), ui.lp(top = 4))
+        val more = Feedbacks.overOrder(info.suggestBoxes, boxes)
+        sheet.addView(ui.text(if (more) "Il sistema ne consiglia ${info.suggestBoxes}, tu ne metti $boxes. Lo vede l'ufficio acquisti."
+            else "Il sistema non lo ordinerebbe · $why. Lo vede l'ufficio acquisti.", 13f, C.MUTED), ui.lp(top = 4))
         fun add(reason: String, before: String = "") {
             dlg.dismiss()
+            api.whyUse = Feedbacks.countUse(api.whyUse, reason.substringBefore(" · "))
             val msg = commit(reason)
             beep(Kind.ORDER)
             flash = msg?.let { before + it }
@@ -1463,14 +1467,19 @@ class MainActivity : Activity() {
             ui.tap(r, 14) { onClick() }
             sheet.addView(r, ui.lp(top = 8))
         }
-        if (sys != null) option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno: conta e segnala") {
-            dlg.dismiss()
-            afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
-            showCount(ean, name, sys)
+        // the reasons this scanner uses most come first (in promotion weeks "Promozione" is on top)
+        val opts = LinkedHashMap<String, () -> Unit>()
+        if (sys != null) opts["Giacenza sbagliata"] = {
+            option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno: conta e segnala") {
+                dlg.dismiss()
+                afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
+                showCount(ean, name, sys)
+            }
         }
-        option(Icons.TAG, C.ORANGE, C.ORANGE_SOFT, "Promozione o volantino", "Ne servono di più per l'offerta") { add("Promozione o volantino") }
-        option(Icons.BOX, C.BLUE_INK, C.BLUE_SOFT, "Più spazio a scaffale", "Nuova esposizione, testata, ripiano in più") { add("Più spazio a scaffale") }
-        option(Icons.INFO, C.GREEN_INK, C.GREEN_SOFT, "L'ha chiesto un cliente", "Ordine o prenotazione di un cliente") { add("Richiesto da un cliente") }
+        opts["Promozione o volantino"] = { option(Icons.TAG, C.ORANGE, C.ORANGE_SOFT, "Promozione o volantino", "Ne servono di più per l'offerta") { add("Promozione o volantino") } }
+        opts["Più spazio a scaffale"] = { option(Icons.BOX, C.BLUE_INK, C.BLUE_SOFT, "Più spazio a scaffale", "Nuova esposizione, testata, ripiano in più") { add("Più spazio a scaffale") } }
+        opts["Richiesto da un cliente"] = { option(Icons.INFO, C.GREEN_INK, C.GREEN_SOFT, "L'ha chiesto un cliente", "Ordine o prenotazione di un cliente") { add("Richiesto da un cliente") } }
+        for (k in Feedbacks.byUse(opts.keys.toList(), api.whyUse)) opts[k]!!()
         val other = EditText(this).apply {
             hint = "Altro motivo"
             setSingleLine()
@@ -1882,6 +1891,36 @@ class MainActivity : Activity() {
     }
 
     /** Last week: what the store asked and what the office ordered. */
+    /** What the purchasing office did with this item last week (asked → ordered, and why). */
+    private fun lastWeek(body: LinearLayout, ean: String) {
+        val prev = list.server?.previous
+        val l = Feedbacks.last(prev, ean) ?: return
+        val got = l.got
+        val (fg, fill) = when {
+            got == null -> C.MUTED to 0xFFEEF1F6.toInt()
+            got >= l.asked -> C.GREEN_INK to C.GREEN_SOFT
+            got <= 0 -> C.RED_INK to C.RED_SOFT
+            else -> C.AMBER_INK to C.AMBER_SOFT
+        }
+        val c = ui.row(Gravity.TOP)
+        c.background = ui.bg(C.CARD, 16, C.LINE)
+        c.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+        c.addView(ui.iconBadge(if (got != null && got < l.asked) Icons.ALERT else Icons.CHECK, fill, fg, 34, 18, 2.2f))
+        val t = ui.col()
+        t.addView(ui.text("SETTIMANA SCORSA", 11f, C.MUTED, ui.bold))
+        val what = when {
+            got == null -> "Chiesti ${l.asked} ${colli(l.asked)} · in attesa dell'ufficio acquisti"
+            got == l.asked -> "Chiesti ${l.asked} · ordinati ${got}"
+            else -> "Chiesti ${l.asked} → ordinati $got"
+        }
+        t.addView(ui.text(what, 14f, fg, ui.bold), ui.lp(top = 2))
+        if (l.note.isNotEmpty()) t.addView(ui.text("Ufficio acquisti: " + l.note, 13f, C.INK), ui.lp(top = 2))
+        else if (l.reason.isNotEmpty() && got != null) t.addView(ui.text("Motivo · " + l.reason, 12f, C.MUTED), ui.lp(top = 2))
+        c.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+        ui.tap(c, 16) { val back = redraw; showLines(Filter.PREV) { back() } }
+        body.addView(c, ui.lp(top = 14))
+    }
+
     private fun prevRow(l: Line, fb: Feedback?): View {
         val r = ui.row()
         r.setPadding(0, ui.dp(8), 0, ui.dp(8))

@@ -76,4 +76,28 @@ class StoreListTest {
         assertEquals("rejected", l.report("3", now)?.status)
         assertEquals(1, l.openReports)
     }
+
+    @Test
+    fun feedbackForLastWeekOverOrderAndReasonsByUse() {
+        val prev = ListState(id = 1, week = "2026-11-15", status = "ordered", submittedAt = 0, submittedBy = "", receivedAt = 0, updatedAt = 0,
+            lines = listOf(Line("8001", "SVELTO", 3, reason = "Promozione o volantino")),
+            feedback = Feedback(mapOf("8001" to 1), mapOf("8001" to "Ridotto da 3 a 1: già in arrivo 2 colli"), emptyList()))
+        val l = Feedbacks.last(prev, "0008001")!!
+        assertEquals(3, l.asked)
+        assertEquals(1, l.got)
+        assertEquals("Ridotto da 3 a 1: già in arrivo 2 colli", l.note)
+        assertEquals(null, Feedbacks.last(prev, "9999"))
+        assertTrue(Feedbacks.overOrder(1, 6))
+        assertTrue(Feedbacks.overOrder(1, 3))
+        assertFalse(Feedbacks.overOrder(1, 2))
+        assertFalse(Feedbacks.overOrder(3, 5))
+        assertTrue(Feedbacks.overOrder(3, 6))
+        assertFalse(Feedbacks.overOrder(0, 6))
+        var saved = ""
+        saved = Feedbacks.countUse(saved, "Promozione o volantino")
+        saved = Feedbacks.countUse(saved, "Promozione o volantino")
+        saved = Feedbacks.countUse(saved, "Richiesto da un cliente")
+        assertEquals(listOf("Promozione o volantino", "Richiesto da un cliente", "Giacenza sbagliata", "Più spazio a scaffale"),
+            Feedbacks.byUse(listOf("Giacenza sbagliata", "Promozione o volantino", "Più spazio a scaffale", "Richiesto da un cliente"), saved))
+    }
 }
