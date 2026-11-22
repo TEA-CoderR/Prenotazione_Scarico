@@ -134,6 +134,11 @@ class Api(private val ctx: Context) {
         get() = prefs.getString("counter", "") ?: ""
         set(v) = prefs.edit().putString("counter", v.trim()).apply()
 
+    /** How often this scanner chose each "why do you order it" reason (most used shown first). */
+    var whyUse: String
+        get() = prefs.getString("why_use", "") ?: ""
+        set(v) = prefs.edit().putString("why_use", v).apply()
+
     /** Sends a stock error: the store counted `counted` pieces (shelf + back room); the system says `system`. */
     fun reportStock(ean: String, name: String, system: Double?, counted: Int, by: String): StockReport {
         val body = JSONObject().put("ean", ean).put("name", name.take(120)).put("systemQty", system ?: JSONObject.NULL)
