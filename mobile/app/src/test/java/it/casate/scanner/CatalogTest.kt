@@ -69,4 +69,36 @@ class CatalogTest {
         assertEquals(12.0, cat.find("8002")!!.pack)
         assertEquals("https://x/{ean}.webp", cat.imageUrl)
     }
+
+    @Test
+    fun adviceAlwaysSaysSomething() {
+        // the purchasing program's number
+        val sys = Catalog.advise(StoreInfo(stock = 9.0, sold30 = 30.0, suggestBoxes = 2, pack = 6.0), null)
+        assertEquals(2, sys.boxes)
+        assertFalse(sys.estimated)
+        assertTrue(sys.reason.contains("9 giorni"))
+        // not computed (not in Griglia): estimated from the last 30 days = one month − stock − coming
+        val est = Catalog.advise(StoreInfo(stock = 4.0, sold30 = 20.0, transitBoxes = 1.0, pack = 6.0), null)
+        assertEquals(2, est.boxes)                         // (20 − 4 − 6) / 6 → 2
+        assertTrue(est.estimated)
+        // already enough: 0, and why
+        val none = Catalog.advise(StoreInfo(stock = 3.0, sold30 = 1.0, transitBoxes = 2.0, suggestBoxes = 0, pack = 6.0), null)
+        assertEquals(0, none.boxes)
+        assertTrue(none.reason.contains("già in arrivo"))
+        assertEquals(0, Catalog.advise(StoreInfo(stock = 5.0, sold30 = 0.0), 6.0).boxes)
+        // nothing to go on
+        assertNull(Catalog.advise(null, 6.0).boxes)
+        assertNull(Catalog.advise(StoreInfo(stock = 0.0, sold30 = 0.0), 6.0).boxes)
+        // the list starts from the suggestion (estimate too), else 1
+        assertEquals(2, Catalog.startBoxes(null, StoreInfo(stock = 4.0, sold30 = 20.0, transitBoxes = 1.0, pack = 6.0)))
+        assertEquals(1, Catalog.startBoxes(null, null))
+    }
+
+    @Test
+    fun newerAppVersion() {
+        val u = AppUpdate(42, "1.0.42", "ab", 10, "")
+        assertTrue(AppUpdate.isNewer(u, 41))
+        assertFalse(AppUpdate.isNewer(u, 42))
+        assertFalse(AppUpdate.isNewer(null, 1))
+    }
 }

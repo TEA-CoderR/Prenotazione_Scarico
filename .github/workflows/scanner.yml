@@ -47,17 +47,27 @@ jobs:
             exit 1
           }
           cp mobile/app/build/outputs/apk/release/app-release.apk casate-scanner.apk
+          # what the app asks to update itself (via <site>/app/version): version, checksum, size
+          SHA=$(sha256sum casate-scanner.apk | cut -d' ' -f1)
+          SIZE=$(stat -c%s casate-scanner.apk)
+          SIGNED=$([ -n "${SCANNER_KEYSTORE:-}" ] && echo true || echo false)
+          jq -n --argjson code "$BUILD_NUMBER" --arg sha "$SHA" --argjson size "$SIZE" --argjson signed "$SIGNED" \
+            --arg notes "$(git log -1 --pretty=%s | head -c 200)" \
+            '{versionCode: $code, versionName: ("1.0." + ($code|tostring)), sha256: $sha, size: $size, notes: $notes, signed: $signed}' > version.json
+          cat version.json
       - uses: actions/upload-artifact@v4
         with:
           name: casate-scanner
-          path: casate-scanner.apk
+          path: |
+            casate-scanner.apk
+            version.json
       - name: Publish release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete scanner-latest --yes --cleanup-tag || true
-          gh release create scanner-latest casate-scanner.apk \
+          gh release create scanner-latest casate-scanner.apk version.json \
             --title "CASA&TE Scanner 1.0.${BUILD_NUMBER}" \
-            --notes "App per i terminali Zebra dei negozi. Installare casate-scanner.apk sul dispositivo." \
+            --notes "App per i terminali Zebra dei negozi. La prima volta installare casate-scanner.apk sul dispositivo; poi l'app si aggiorna da sola." \
             --latest=false

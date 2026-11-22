@@ -65,6 +65,9 @@ enum class Kind {
 
 data class Verdict(val kind: Kind, val item: Item?, val substitute: Item?)
 
+/** The system's suggestion: boxes (null = cannot say), whether it is the app's own estimate, and why in one line. */
+data class Advice(val boxes: Int?, val estimated: Boolean, val reason: String)
+
 class Catalog(
     val id: Int,
     val week: String,
@@ -123,11 +126,48 @@ class Catalog(
         }
 
         /** Boxes to start with: what is already in the list, else the suggestion, else 1. */
-        fun startBoxes(inList: Int?, info: StoreInfo?): Int = when {
-            inList != null && inList > 0 -> inList
-            (info?.suggestBoxes ?: 0) > 0 -> info!!.suggestBoxes!!
-            else -> 1
+        fun startBoxes(inList: Int?, info: StoreInfo?, pack: Double? = null): Int {
+            if (inList != null && inList > 0) return inList
+            val a = advise(info, pack).boxes ?: 0
+            return if (a > 0) a else 1
         }
+
+        /**
+         * What the system suggests for this store (always something to show the person ordering):
+         * the purchasing program's number when it computed one (Griglia items and substitutes), else an
+         * estimate from the last 30 days (one month of sales − stock − what is coming), else nothing.
+         */
+        fun advise(info: StoreInfo?, pack: Double?): Advice {
+            info ?: return Advice(null, false, "Dati del negozio non ancora pubblicati")
+            val pk = (info.pack ?: pack)?.takeIf { it > 0 }
+            val transit = info.transitBoxes ?: 0.0
+            val transitPcs = transit * (pk ?: 0.0)
+            val stock = (info.stock ?: 0.0).coerceAtLeast(0.0)
+            val sold = info.sold30 ?: 0.0
+            val cover = info.coverDays(transitPcs)
+            val sys = info.suggestBoxes
+            val boxes: Int?
+            val estimated: Boolean
+            if (sys != null) {
+                boxes = sys.coerceAtLeast(0); estimated = false
+            } else if (pk != null && sold > 0) {
+                boxes = ceil((sold - stock - transitPcs) / pk - 1e-9).toInt().coerceAtLeast(0); estimated = true
+            } else if (sold <= 0 && stock > 0) {
+                boxes = 0; estimated = true
+            } else return Advice(null, false, if (pk == null) "Senza pezzi per collo: decidi tu" else "Nessuna vendita negli ultimi 30 giorni")
+            val reason = when {
+                boxes > 0 && stock <= 0 -> "Scaffale vuoto · vendi ${fmt(sold)} pz al mese"
+                boxes > 0 && cover != null -> "Ti bastano ${cover} giorni · vendi ${fmt(sold)} pz al mese"
+                boxes > 0 -> "Vendi ${fmt(sold)} pz al mese"
+                transit > 0 && cover != null -> "${fmt(transit)} ${if (transit == 1.0) "collo" else "colli"} già in arrivo: bastano ${months(cover)}"
+                transit > 0 -> "${fmt(transit)} ${if (transit == 1.0) "collo" else "colli"} già in arrivo"
+                cover != null -> "Hai ${fmt(stock)} pz: bastano ${months(cover)}"
+                else -> "Hai ${fmt(stock)} pz e non si vende da 30 giorni"
+            }
+            return Advice(boxes, estimated, reason)
+        }
+
+        private fun fmt(v: Double) = if (v == Math.floor(v)) v.toLong().toString() else String.format(java.util.Locale.ITALY, "%.1f", v)
 
         /** After ordering `boxes`, how many days the stock lasts (null = unknown). */
         fun coverAfter(info: StoreInfo?, boxes: Int): Int? {
