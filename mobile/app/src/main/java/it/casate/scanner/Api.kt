@@ -247,6 +247,9 @@ class Api(private val ctx: Context) {
                     substituteEan = r.optString(4),
                     substituteName = r.optString(5),
                     direct = if (d >= 0) directs.optString(d, "") else "",
+                    pack = num(r, 7)?.takeIf { it > 0 },
+                    bestPrice = num(r, 8)?.takeIf { it > 0 },
+                    bestSource = r.optInt(9, -1).let { k -> if (k >= 0) sources.optString(k, "") else "" },
                 )
             }
             // This store's numbers: [ean, stock, sold30, transitBoxes, suggestBoxes, cost, price, promoPrice, promoEnd, pack]
@@ -263,7 +266,7 @@ class Api(private val ctx: Context) {
                     lastSaleDays = num(r, 10)?.toInt(), suspect = (num(r, 11) ?: 0.0) > 0,
                 )
             }
-            return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info)
+            return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info, o.optString("imageUrl"))
         }
     }
 }

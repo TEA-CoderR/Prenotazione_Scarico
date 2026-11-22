@@ -1,7 +1,15 @@
 package it.casate.scanner
 
 import android.app.Activity
+import android.app.Dialog
+import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.RippleDrawable
+import android.view.ViewOutlineProvider
+import android.view.Window
+import android.widget.ImageView
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -43,9 +51,13 @@ object C {
     const val YELLOW = 0xFFFFC857.toInt()
     const val CORAL = 0xFFFF8A7A.toInt()
     const val MINT = 0xFF2DD4A3.toInt()
+    /** "only if urgent": allowed, but an exception (not red = forbidden) */
+    const val ORANGE = 0xFFC2410C.toInt()
+    const val ORANGE_SOFT = 0xFFFFEDD5.toInt()
 }
 
 class Ui(private val a: Activity) {
+    var images: Images? = null
     val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
     val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
     val mono: Typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
@@ -103,17 +115,131 @@ class Ui(private val a: Activity) {
         return v
     }
 
+    private fun dark(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000 < 140
+
+    /** Native touch feedback (ripple) over `content`, clipped to the rounded corners. */
+    fun ripple(content: Drawable?, radius: Int = 14, onDark: Boolean = false): Drawable {
+        val mask = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dpf(radius.toFloat()) }
+        return RippleDrawable(ColorStateList.valueOf(if (onDark) 0x40FFFFFF else 0x220B1220), content, mask)
+    }
+
+    /** Makes any view a button: ripple on its background, click, focus. */
+    fun <V : View> tap(v: V, radius: Int = 14, onDark: Boolean = false, onClick: () -> Unit): V {
+        v.background = ripple(v.background, radius, onDark)
+        v.isClickable = true
+        v.isFocusable = true
+        v.setOnClickListener { onClick() }
+        return v
+    }
+
     /** A big tappable button: filled (`fill`) or outlined (fill = 0). */
     fun button(label: String, fill: Int, fg: Int = Color.WHITE, outline: Int = 0, size: Float = 16f, onClick: () -> Unit) =
         text(label, size, fg, bold).apply {
             gravity = Gravity.CENTER
             val stroke = if (outline != 0) outline else if (fill == 0) C.LINE2 else 0
             background = bg(if (fill != 0) fill else C.CARD, 14, stroke, if (outline != 0 && fill == 0) 2 else 1)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { onClick() }
+            tap(this, 14, fill != 0 && dark(fill)) { onClick() }
             contentDescription = label
         }
+
+    /** Button with a line icon before the label. */
+    fun iconButton(label: String, icon: Icons.Spec, fill: Int, fg: Int = Color.WHITE, outline: Int = 0, size: Float = 16f,
+                   after: Boolean = false, onClick: () -> Unit): LinearLayout {
+        val r = row(Gravity.CENTER)
+        val stroke = if (outline != 0) outline else if (fill == 0) C.LINE2 else 0
+        r.background = bg(if (fill != 0) fill else C.CARD, 14, stroke, if (outline != 0 && fill == 0) 2 else 1)
+        if (after) {
+            r.addView(text(label, size, fg, bold), lp(w = WRAP))
+            r.addView(icon(icon, fg, 18, 2.2f), LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(8) })
+        } else {
+            r.addView(icon(icon, fg, 18, 2.2f))
+            r.addView(text(label, size, fg, bold), lp(w = WRAP, start = 8))
+        }
+        r.contentDescription = label
+        return tap(r, 14, fill != 0 && dark(fill)) { onClick() }
+    }
+
+    fun icon(spec: Icons.Spec, color: Int, size: Int = 20, stroke: Float = 2f) = ImageView(a).apply {
+        setImageDrawable(IconDrawable(spec, color, stroke))
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    /** Round badge with a line icon (the coloured headers of the scan results). */
+    fun iconBadge(spec: Icons.Spec, fill: Int, fg: Int, size: Int = 52, iconSize: Int = 28, stroke: Float = 2.4f): View {
+        val f = FrameLayout(a)
+        f.background = if (fill == 0) null else circle(fill)
+        val i = ImageView(a).apply { setImageDrawable(IconDrawable(spec, fg, stroke)) }
+        f.addView(i, FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
+        f.layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+        return f
+    }
+
+    /** Ticked / empty square box. */
+    fun checkbox(on: Boolean, size: Int = 24): View {
+        val f = FrameLayout(a)
+        f.background = if (on) bg(C.NAVY, 6) else bg(C.CARD, 6, C.LINE2, 2)
+        if (on) f.addView(ImageView(a).apply { setImageDrawable(IconDrawable(Icons.CHECK, Color.WHITE, 3f)) },
+            FrameLayout.LayoutParams(dp(size - 8), dp(size - 8), Gravity.CENTER))
+        f.layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+        return f
+    }
+
+    /**
+     * The product photo (from the image server), with the item's first letters until it arrives or when
+     * there is none. Tap = bigger photo.
+     */
+    fun photo(ean: String, name: String, size: Int = 64, fg: Int = C.BLUE, fill: Int = C.CARD, faded: Boolean = false): View {
+        val f = FrameLayout(a)
+        f.background = bg(fill, if (size >= 56) 14 else 10, if (fill == C.CARD) C.LINE else 0)
+        f.outlineProvider = ViewOutlineProvider.BACKGROUND
+        f.clipToOutline = true
+        val letters = name.split(' ', '.', '-').filter { it.isNotEmpty() && it[0].isLetter() }.take(2)
+            .joinToString("") { it.take(1) }.uppercase().ifEmpty { "?" }
+        val t = text(letters, if (size >= 56) 18f else 13f, fg, bold).apply { gravity = Gravity.CENTER }
+        f.addView(t, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val img = ImageView(a).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.WHITE)
+            visibility = View.GONE
+            if (faded) alpha = 0.55f
+            val p = dp(if (size >= 56) 4 else 2)
+            setPadding(p, p, p, p)
+        }
+        f.addView(img, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        f.layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+        val im = images
+        if (im != null && ean.isNotEmpty()) {
+            im.into(img, ean, dp(size)) { ok ->
+                img.visibility = if (ok) View.VISIBLE else View.GONE
+                if (ok) {
+                    f.isClickable = true
+                    f.contentDescription = "Foto di $name"
+                    f.setOnClickListener { zoom(ean, name) }
+                }
+            }
+        }
+        return f
+    }
+
+    /** The photo big, in a dialog (tap anywhere to close). */
+    fun zoom(ean: String, name: String) {
+        val im = images ?: return
+        val d = Dialog(a)
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val c = col(16)
+        c.background = bg(C.CARD, 22)
+        val side = (a.resources.displayMetrics.widthPixels * 0.8).toInt()
+        val img = ImageView(a).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        c.addView(img, LinearLayout.LayoutParams(side, side))
+        c.addView(text(name, 14f, C.INK, bold), lp(top = 12))
+        c.addView(num(ean, 12f, C.MUTED), lp(top = 4))
+        c.setOnClickListener { d.dismiss() }
+        im.into(img, ean, side) {}
+        d.setContentView(c)
+        d.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        d.show()
+    }
 
     /** Small rounded label ("CONSIGLIATO", "URGENZA"). */
     fun chip(label: String, fg: Int, fill: Int, size: Float = 12f) = text(label, size, fg, bold).apply {

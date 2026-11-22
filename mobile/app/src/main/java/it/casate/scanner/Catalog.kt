@@ -18,6 +18,10 @@ data class Item(
     val substituteName: String,
     /** Direct supplier (SCHEDA) that sells it, or "". */
     val direct: String,
+    /** Pieces per box (Griglia / wholesaler list), cheapest wholesaler piece price this week and who. */
+    val pack: Double? = null,
+    val bestPrice: Double? = null,
+    val bestSource: String = "",
 )
 
 /** This store's numbers for an item (from the purchasing program; any of them may be missing). */
@@ -67,6 +71,7 @@ class Catalog(
     val publishedAt: String,
     private val items: Map<String, Item>,
     private val store: Map<String, StoreInfo> = emptyMap(),
+    val imageUrl: String = "",
 ) {
     val size get() = items.size
     val hasStoreData get() = store.isNotEmpty()
@@ -82,6 +87,17 @@ class Catalog(
     }
 
     fun judge(scan: String): Verdict = judgeItem(find(scan)) { find(it) }
+
+    /** Items whose name has all the words (or whose barcode contains the digits): Griglia first. */
+    fun search(q: String, limit: Int = 30): List<Item> {
+        val t = q.trim()
+        if (t.isEmpty()) return emptyList()
+        val digits = t.all { it.isDigit() }
+        val words = t.uppercase().split(' ').filter { it.isNotBlank() }
+        val key = t.trimStart('0')
+        val out = items.values.filter { if (digits) it.ean.contains(key) else it.name.uppercase().let { n -> words.all { w -> n.contains(w) } } }
+        return out.sortedWith(compareBy<Item>({ if (it.griglia == 1) 0 else if (it.griglia == 2) 1 else 2 }, { it.name })).take(limit)
+    }
 
     companion object {
         /** Ways the same barcode may be written: as scanned, without leading zeros (how the catalog stores it). */
