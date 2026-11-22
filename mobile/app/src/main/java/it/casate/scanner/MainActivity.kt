@@ -109,6 +109,7 @@ class MainActivity : Activity() {
             if (catalog == null || System.currentTimeMillis() - api.lastCheck > 30 * 60_000) refreshCatalog(false)
             sync(quiet = true)
         }
+        if (System.currentTimeMillis() - updateAt > 3 * 3600_000L) checkUpdate(false)
         main.removeCallbacks(tick)
         main.postDelayed(tick, 60_000)
     }
@@ -409,30 +410,50 @@ class MainActivity : Activity() {
             body.addView(ui.spacer(12))
         }
 
-        // reminders that are back
-        val back = list.server?.reminders.orEmpty().filter { r -> catalog?.judge(r.ean)?.kind == Kind.ORDER && (list.line(r.ean)?.boxes ?: 0) == 0 }
-        if (back.isNotEmpty()) {
+        // a newer app is published: update from here (like the desktop program)
+        update?.let { u ->
             val b = ui.row()
-            b.background = ui.bg(C.GREEN_SOFT, 14)
-            b.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
-            b.addView(ui.icon(Icons.REFRESH, C.GREEN_INK, 18, 2.2f))
-            b.addView(ui.text(if (back.size == 1) "${back[0].name.take(28)} è tornato disponibile" else "${back.size} articoli sono tornati disponibili", 14f, C.GREEN_INK, ui.bold), ui.lp(w = 0, weight = 1f, start = 10))
-            b.addView(ui.icon(Icons.NEXT, C.GREEN_INK, 18, 2.2f))
-            ui.tap(b, 14) { if (back.size == 1) openScan(back[0].ean, null) else showLines(Filter.REMIND) { showHome() } }
+            b.background = ui.bg(C.BLUE_SOFT, 14, 0xFFC6D5FF.toInt())
+            b.setPadding(ui.dp(14), ui.dp(10), ui.dp(10), ui.dp(10))
+            b.addView(ui.icon(Icons.REFRESH, C.BLUE_INK, 18, 2.2f))
+            val t = ui.col()
+            t.addView(ui.text("Nuova versione dell'app · ${u.versionName}", 14f, C.BLUE_INK, ui.bold))
+            t.addView(ui.text("Un minuto · lista e collegamento restano", 12f, C.BLUE_INK), ui.lp(top = 1))
+            b.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+            b.addView(ui.button("Aggiorna", C.BLUE, size = 14f) { startUpdate(u) }.apply { setPadding(ui.dp(16), 0, ui.dp(16), 0) },
+                ui.lp(w = ui.WRAP, h = ui.dp(40)))
             body.addView(b)
             body.addView(ui.spacer(12))
         }
 
-        // items to count later
-        if (toCount.size > 0) {
-            val b = ui.row()
-            b.background = ui.bg(C.AMBER_SOFT, 14, C.AMBER_LINE)
-            b.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
-            b.addView(ui.icon(Icons.LIST, C.AMBER_INK, 18, 2.2f))
-            b.addView(ui.text("Da contare: ${toCount.size} " + (if (toCount.size == 1) "articolo" else "articoli"), 14f, C.AMBER_INK, ui.bold), ui.lp(w = 0, weight = 1f, start = 10))
-            b.addView(ui.icon(Icons.NEXT, C.AMBER_INK, 18, 2.2f))
-            ui.tap(b, 14) { showToCount { showHome() } }
-            body.addView(b)
+        // what is left to do before sending, in one card (tap a row = do it)
+        val back = list.server?.reminders.orEmpty().filter { r -> catalog?.judge(r.ean)?.kind == Kind.ORDER && (list.line(r.ean)?.boxes ?: 0) == 0 }
+        val nCheck = checks().size
+        if (back.isNotEmpty() || toCount.size > 0 || nCheck > 0) {
+            val card = ui.col()
+            card.background = ui.bg(C.CARD, 16, C.LINE)
+            card.setPadding(ui.dp(14), ui.dp(10), ui.dp(10), ui.dp(4))
+            card.addView(ui.text("DA FARE PRIMA DI INVIARE", 12f, C.MUTED, ui.bold))
+            fun todo(icon: Icons.Spec, fg: Int, fill: Int, title: String, sub: String, count: Int, onTap: () -> Unit) {
+                val r = ui.row()
+                r.setPadding(0, ui.dp(8), 0, ui.dp(8))
+                r.addView(ui.iconBadge(icon, fill, fg, 34, 18, 2.2f))
+                val t = ui.col()
+                t.addView(ui.text(title, 14f, C.INK, ui.bold))
+                t.addView(ui.text(sub, 12f, C.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, ui.lp(top = 1))
+                r.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+                r.addView(ui.num("$count", 15f, fg))
+                r.addView(ui.icon(Icons.NEXT, C.FAINT, 16, 2.2f), LinearLayout.LayoutParams(ui.dp(16), ui.dp(16)).apply { marginStart = ui.dp(6) })
+                ui.tap(r, 10) { onTap() }
+                card.addView(r)
+            }
+            if (toCount.size > 0) todo(Icons.LIST, C.AMBER_INK, C.AMBER_SOFT, "Da contare", "Conta la giacenza: l'ufficio la corregge", toCount.size) { showToCount { showHome() } }
+            if (nCheck > 0) todo(Icons.ALERT, C.AMBER_INK, C.AMBER_SOFT, "Da controllare", "Scorta alta, già in arrivo o non più ordinabile", nCheck) { showLines(Filter.CHECK) { showHome() } }
+            if (back.isNotEmpty()) todo(Icons.REFRESH, C.GREEN_INK, C.GREEN_SOFT, "Tornati disponibili",
+                if (back.size == 1) back[0].name.take(40) else "Li avevi chiesti: ora si possono ordinare", back.size) {
+                if (back.size == 1) openScan(back[0].ean) { showHome() } else showLines(Filter.REMIND) { showHome() }
+            }
+            body.addView(card)
             body.addView(ui.spacer(12))
         }
 
@@ -662,7 +683,8 @@ class MainActivity : Activity() {
         val inList = list.line(target)
         val info = cat.info(target)
         returnTo = back
-        pending = Pending(raw, v, Catalog.startBoxes(inList?.boxes, info), remind = inList?.kind != "griglia")
+        val pack = info?.pack?.takeIf { it > 0 } ?: (if (v.kind == Kind.SUBSTITUTE) v.substitute else v.item)?.pack
+        pending = Pending(raw, v, Catalog.startBoxes(inList?.boxes, info, pack), remind = inList?.kind != "griglia")
         beep(v.kind)
         showResult()
     }
@@ -785,10 +807,7 @@ class MainActivity : Activity() {
             val tags = ui.row()
             fun tag(t: String, fg: Int, fill: Int) = tags.addView(ui.chip(t, fg, fill), ui.lp(w = ui.WRAP, start = if (tags.childCount > 0) 6 else 0))
             if (s.wholesalers.isNotEmpty()) tag("${s.wholesalers.size} " + (if (s.wholesalers.size == 1) "grossista" else "grossisti"), C.GREEN_INK, C.GREEN_SOFT)
-            info?.stock?.let { tag("In negozio ${n(it)} pz", C.MUTED, 0xFFEEF1F6.toInt()) }
             if (tags.childCount > 0) nw.addView(tags, ui.lp(top = 10))
-            nw.addView(divider(), ui.lp(h = 1, top = 12))
-            nw.addView(stepRow(p, pack, 52, 36f), ui.lp(top = 12))
             body.addView(nw)
         } else {
             val pr = ui.row()
@@ -830,63 +849,17 @@ class MainActivity : Activity() {
             r.addView(ui.text("Giacenza e vendite di $store non ancora pubblicate dall'ufficio acquisti", 12f, C.MUTED), ui.lp(w = 0, weight = 1f, start = 8))
             body.addView(r, ui.lp(top = 14))
         }
-        // prices: purchase (this week's cheapest wholesaler if the store has none) / sale / promotion
-        val cost = info?.cost?.takeIf { it > 0 } ?: item?.bestPrice
-        val costFrom = if (info?.cost?.takeIf { it > 0 } == null) item?.bestSource.orEmpty() else ""
-        if ((cost ?: 0.0) > 0 || (info?.price ?: 0.0) > 0) {
-            val pr = ui.row()
-            pr.background = ui.bg(C.CARD, 12, C.LINE)
-            pr.setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(9))
-            pr.addView(ui.icon(Icons.TAG, C.MUTED, 16, 2f))
-            pr.addView(ui.text("Acquisto ", 12f, C.MUTED), ui.lp(w = ui.WRAP, start = 8))
-            pr.addView(ui.num(eur(cost), 13f))
-            if (costFrom.isNotEmpty()) pr.addView(ui.text(" $costFrom", 11f, C.FAINT))
-            if ((info?.price ?: 0.0) > 0) {
-                pr.addView(ui.text("   Vendita ", 12f, C.MUTED))
-                val sale = ui.num(eur(info!!.price), 13f)
-                if ((info.promoPrice ?: 0.0) > 0) ui.struck(sale).setTextColor(C.FAINT)
-                pr.addView(sale)
-            }
-            pr.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
-            if ((info?.promoPrice ?: 0.0) > 0) {
-                pr.addView(ui.chip("PROMO " + eur(info!!.promoPrice) + (if (info.promoEnd.isNotEmpty()) " · " + info.promoEnd else ""), Color.WHITE, C.RED, 11f))
-            }
-            body.addView(pr, ui.lp(top = 8))
-        }
+        // price: sale price, and the offer price when there is one (the purchase price is not shown to the stores)
+        priceRow(body, info)
         if (sysInfo != null) stockCheck(body, target, item?.name ?: "", sysInfo, rep)
 
-        // things worth knowing before ordering (tap: the list / the reason)
-        fun note(icon: Icons.Spec, text: String, fg: Int, fill: Int, line: Int, onTap: (() -> Unit)? = null) {
-            val r = ui.row()
-            r.background = ui.bg(fill, 12, line)
-            r.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
-            r.addView(ui.icon(icon, fg, 18, 2.2f))
-            r.addView(ui.text(text, 13f, fg), ui.lp(w = 0, weight = 1f, start = 10))
-            if (onTap != null) {
-                r.addView(ui.icon(Icons.NEXT, fg, 16, 2.2f))
-                ui.tap(r, 12) { onTap() }
-            }
-            body.addView(r, ui.lp(top = 8))
-        }
-        if (inList != null && inList.boxes > 0 && (v.kind == Kind.ORDER || v.kind == Kind.SUBSTITUTE)) {
-            val by = if (!inList.updatedBy.isNullOrEmpty() && inList.updatedBy != api.deviceName) " · da ${inList.updatedBy}" else ""
-            note(Icons.LIST, "Già in lista: ${inList.boxes} ${colli(inList.boxes)}$by", C.BLUE_INK, C.BLUE_SOFT, 0xFFC6D5FF.toInt()) {
-                val back = redraw
-                showLines(Filter.ALL) { back() }
-            }
-        }
-        if ((v.kind == Kind.ORDER || v.kind == Kind.SUBSTITUTE) && info != null) {
-            if ((info.transitBoxes ?: 0.0) > 0) note(Icons.TRUCK, "${n(info.transitBoxes)} ${colli((info.transitBoxes ?: 0.0).toInt())} già in arrivo: tienine conto", C.BLUE_INK, C.BLUE_SOFT, 0xFFC6D5FF.toInt())
-            if (Catalog.overstocked(info)) {
-                val c = info.coverDays((info.transitBoxes ?: 0.0) * (pack ?: 0.0))
-                note(Icons.ALERT, "Hai già ${n(info.stock)} pz" + (if (c != null) ": bastano ${Catalog.months(c)}" else " e non si vendono"), C.AMBER_INK, C.AMBER_SOFT, C.AMBER_LINE)
-            }
-        }
+        // the decision: what the system suggests and how many to order
+        val adv = Catalog.advise(info, pack)
+        if (v.kind == Kind.ORDER || v.kind == Kind.SUBSTITUTE) body.addView(decision(p, info, pack, adv, inList), ui.lp(top = 14))
 
         if (v.kind == Kind.ORDER || v.kind == Kind.SUBSTITUTE || v.kind == Kind.URGENT_ONLY) lastWeek(body, target)
         when (v.kind) {
-            Kind.ORDER -> body.addView(stepper(p, info, pack), ui.lp(top = 14))
-            Kind.SUBSTITUTE -> {}
+            Kind.ORDER, Kind.SUBSTITUTE -> {}
             Kind.NOT_AVAILABLE -> notAvailable(body, p, info)
             Kind.URGENT_ONLY -> howToOrder(body, v, info)
             Kind.DIRECT_ONLY, Kind.UNKNOWN -> {
@@ -930,9 +903,9 @@ class MainActivity : Activity() {
                     else -> "Aggiungi ${p.boxes} ${colli(p.boxes)}"
                 }
                 val icon = if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS
-                val ask = needsWhy(v, info, rep, p.boxes) && (!inIt || (Feedbacks.overOrder(info?.suggestBoxes, p.boxes) && !Feedbacks.overOrder(info?.suggestBoxes, inList!!.boxes)))
+                val ask = askWhy(p, info, rep, adv, inList)
                 r.addView(ui.iconButton(label, icon, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN) {
-                    if (ask) return@iconButton whySheet(target, item?.name ?: target, info!!, sysInfo, p.boxes)
+                    if (ask) return@iconButton whySheet(target, item?.name ?: target, info!!, sysInfo, p.boxes, adv)
                     val msg = commit()
                     if (msg != null) beep(Kind.ORDER)
                     done(msg)
@@ -959,72 +932,138 @@ class MainActivity : Activity() {
     }
 
     // ================================================================== stock errors
-    /** Under the store's numbers: the state of a stock report, or "the stock looks wrong", or a quiet way to report it. */
+    /**
+     * Under the store's numbers, always visible: is the stock right? One clear card with its state —
+     * a report waiting / corrected / refused, "to count later", the system's doubt — or a plain
+     * "La giacenza non torna?" with a real button. The button opens a sheet with the two ways, explained.
+     */
     private fun stockCheck(body: LinearLayout, ean: String, name: String, sys: StoreInfo?, rep: StockReport?) {
         sys ?: return
         val c = ui.col(14)
         val recount = { showCount(ean, name, sys) }
         val later = toCount.has(ean)
-        fun twoButtons(fg: Int, line: Int) {
+        fun buttons(fg: Int, line: Int, nowLabel: String = "Conta adesso") {
             val r = ui.row()
-            r.addView(ui.button("Conta adesso", 0, fg, line, 14f) { recount() }, ui.lp(w = 0, h = ui.dp(42), weight = 1f))
-            r.addView(ui.button(if (later) "Da contare ✓" else "Conta dopo", 0, fg, line, 14f) {
-                if (later) { toCount.remove(ean); saveToCount() } else countLater(ean, name)
+            r.addView(ui.button(nowLabel, 0, fg, line, 14f) { recount() }, ui.lp(w = 0, h = ui.dp(42), weight = 1f))
+            r.addView(ui.button(if (later) "Togli da «Da contare»" else "Metti in «Da contare»", 0, fg, line, 14f) {
+                if (later) {
+                    toCount.remove(ean); saveToCount()
+                    toast("Tolto da «Da contare»")
+                } else {
+                    countLater(ean, name)
+                    toast("In «Da contare» · ${toCount.size} da contare")
+                }
                 redraw()
             }, ui.lp(w = 0, h = ui.dp(42), weight = 1f, start = 8))
             c.addView(r, ui.lp(top = 10))
         }
+        fun title(icon: Icons.Spec, t: String, sub: String, fg: Int) {
+            val r = ui.row()
+            r.addView(ui.icon(icon, fg, 18, 2.2f))
+            r.addView(ui.text(t, 14f, fg, ui.bold), ui.lp(w = 0, weight = 1f, start = 8))
+            c.addView(r)
+            if (sub.isNotEmpty()) c.addView(ui.text(sub, 12f, fg), ui.lp(top = 4))
+        }
         when {
             rep?.status == "open" -> {
                 c.background = ui.bg(C.BLUE_SOFT, 14, 0xFFC6D5FF.toInt())
-                c.addView(ui.text("Giacenza segnalata · in attesa dell'ufficio", 14f, C.BLUE_INK, ui.bold))
-                c.addView(ui.text("Contati ${rep.counted} pz da ${rep.countedBy} · a sistema ${n(rep.systemQty)} pz · " + dayTime(rep.createdAt, false), 12f, C.BLUE_INK), ui.lp(top = 4))
+                title(Icons.CLOCK, "Giacenza segnalata · in attesa dell'ufficio",
+                    "Contati ${rep.counted} pz da ${rep.countedBy} · a sistema ${n(rep.systemQty)} pz · " + dayTime(rep.createdAt, false) +
+                        ". Il consiglio usa già i pezzi contati.", C.BLUE_INK)
+                c.addView(ui.button("Conta di nuovo", 0, C.BLUE_INK, 0xFFC6D5FF.toInt(), 14f) { recount() }, ui.lp(h = ui.dp(40), top = 10))
             }
             rep?.status == "fixed" -> {
                 c.background = ui.bg(C.GREEN_SOFT, 14)
-                c.addView(ui.text("✓ Giacenza corretta dall'ufficio acquisti", 14f, C.GREEN_INK, ui.bold))
-                c.addView(ui.text("Era ${n(rep.systemQty)} pz, contati ${rep.counted} pz" + (if (rep.answer.isNotEmpty()) " · ${rep.answer}" else ""), 12f, C.GREEN_INK), ui.lp(top = 4))
+                title(Icons.CHECK, "Giacenza corretta dall'ufficio acquisti",
+                    "Era ${n(rep.systemQty)} pz, contati ${rep.counted} pz" + (if (rep.answer.isNotEmpty()) " · ${rep.answer}" else ""), C.GREEN_INK)
             }
             rep?.status == "rejected" -> {
                 c.background = ui.bg(C.RED_BG, 14, 0xFFF7C6C0.toInt())
-                c.addView(ui.text("Segnalazione respinta", 14f, C.RED_INK, ui.bold))
-                c.addView(ui.text(rep.answer.ifEmpty { "Chiedi all'ufficio acquisti" }, 12f, C.RED_INK), ui.lp(top = 4))
-                twoButtons(C.RED_INK, C.RED)
+                title(Icons.ALERT, "Segnalazione respinta", rep.answer.ifEmpty { "Chiedi all'ufficio acquisti" }, C.RED_INK)
+                buttons(C.RED_INK, C.RED, "Conta di nuovo")
+            }
+            later -> {
+                c.background = ui.bg(C.AMBER_SOFT, 14, C.AMBER_LINE)
+                title(Icons.LIST, "In «Da contare» · ${toCount.size} in tutto",
+                    "Contalo prima di inviare la lista: l'ufficio corregge la giacenza e ordina giusto.", C.AMBER_INK)
+                buttons(C.AMBER_INK, C.AMBER)
             }
             sys.suspect && (sys.stock ?: 0.0) > 0 -> {
                 c.background = ui.bg(C.AMBER_SOFT, 14, C.AMBER_LINE)
-                c.addView(ui.text("! Giacenza da verificare", 14f, C.AMBER_INK, ui.bold))
                 val d = sys.lastSaleDays
-                c.addView(ui.text("A sistema ${n(sys.stock)} pz, ma " + (if (d != null) "nessuna vendita da $d giorni" else "non si vende da molto") +
-                    ". Guarda sullo scaffale e in magazzino.", 12f, C.AMBER_INK), ui.lp(top = 4))
-                twoButtons(C.AMBER_INK, C.AMBER)
+                title(Icons.ALERT, "Giacenza da verificare",
+                    "A sistema ${n(sys.stock)} pz, ma " + (if (d != null) "nessuna vendita da $d giorni" else "non si vende da molto") +
+                        ". Guarda sullo scaffale e in magazzino.", C.AMBER_INK)
+                buttons(C.AMBER_INK, C.AMBER)
             }
             else -> {
+                c.background = ui.bg(C.CARD, 14, C.LINE)
+                c.setPadding(ui.dp(14), ui.dp(8), ui.dp(8), ui.dp(8))
                 val r = ui.row()
-                if (later) {
-                    r.addView(ui.chip("Da contare dopo", C.AMBER_INK, C.AMBER_SOFT, 12f), ui.lp(w = ui.WRAP))
-                    r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
-                    r.addView(ui.button("Conta adesso", 0, C.AMBER_INK, size = 13f) { recount() }.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) },
-                        ui.lp(w = ui.WRAP, h = ui.dp(36)))
-                } else {
-                    r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
-                    r.addView(ui.button("Giacenza sbagliata?", 0, C.MUTED, size = 13f) { countChoice(ean, name, sys) }.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) },
-                        ui.lp(w = ui.WRAP, h = ui.dp(36)))
-                }
-                body.addView(r, ui.lp(top = 8))
-                return
+                val t = ui.col()
+                t.addView(ui.text("La giacenza non torna?", 14f, C.INK, ui.bold))
+                t.addView(ui.text("A sistema ${n(sys.stock)} pz", 12f, C.MUTED), ui.lp(top = 1))
+                r.addView(t, ui.lp(w = 0, weight = 1f))
+                r.addView(ui.button("Segnala", 0, C.INK, C.LINE2, 14f) {
+                    stockSheet(sys, "Conta adesso", "Conti scaffale e magazzino e lo segnali subito all'ufficio. Poi torni qui.",
+                        "Metti in «Da contare»", "Lo conti più tardi insieme agli altri. Intanto continui a ordinare.",
+                        onNow = { recount() },
+                        onLater = {
+                            countLater(ean, name)
+                            toast("In «Da contare» · ${toCount.size} da contare")
+                            redraw()
+                        })
+                }.apply { setPadding(ui.dp(18), 0, ui.dp(18), 0) }, ui.lp(w = ui.WRAP, h = ui.dp(40)))
+                c.addView(r)
             }
         }
-        if (rep?.status == "open" || rep?.status == "fixed") {
-            val r = ui.row()
-            r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
-            r.addView(ui.text("Conta di nuovo", 12f, if (rep.status == "open") C.BLUE_INK else C.GREEN_INK, ui.bold).apply {
-                setPadding(0, ui.dp(8), 0, 0)
-                setOnClickListener { recount() }
-            })
-            c.addView(r)
-        }
         body.addView(c, ui.lp(top = 8))
+    }
+
+    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+
+    /** Bottom sheet "La giacenza è sbagliata?": two big, explained choices (count now / count later) + Annulla. */
+    private fun stockSheet(sys: StoreInfo, nowTitle: String, nowSub: String, laterTitle: String, laterSub: String,
+                           onNow: () -> Unit, onLater: () -> Unit) {
+        val dlg = Dialog(this)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val sheet = ui.col()
+        sheet.background = ui.bg(C.CARD, 24)
+        sheet.setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(18))
+        sheet.addView(View(this).apply { background = ui.bg(C.LINE2, 3) }, LinearLayout.LayoutParams(ui.dp(40), ui.dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        sheet.addView(ui.text("La giacenza è sbagliata?", 22f, C.INK, ui.bold), ui.lp(top = 14))
+        sheet.addView(ui.text("A sistema ${n(sys.stock)} pz. Scegli come vuoi fare:", 13f, C.MUTED), ui.lp(top = 4))
+        fun option(icon: Icons.Spec, fg: Int, fill: Int, line: Int, title: String, sub: String, onClick: () -> Unit) {
+            val r = ui.row()
+            r.background = ui.bg(fill, 16, line, 2)
+            r.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+            r.addView(ui.iconBadge(icon, C.CARD, fg, 44, 24, 2.2f))
+            val t = ui.col()
+            t.addView(ui.text(title, 16f, C.INK, ui.bold))
+            t.addView(ui.text(sub, 13f, C.MUTED), ui.lp(top = 2))
+            r.addView(t, ui.lp(w = 0, weight = 1f, start = 12))
+            r.addView(ui.icon(Icons.NEXT, fg, 18, 2.2f))
+            ui.tap(r, 16) { dlg.dismiss(); onClick() }
+            sheet.addView(r, ui.lp(top = 12))
+        }
+        option(Icons.BOX, C.RED_INK, C.RED_BG, 0xFFF7C6C0.toInt(), nowTitle, nowSub, onNow)
+        option(Icons.LIST, C.AMBER_INK, C.AMBER_SOFT, C.AMBER_LINE, laterTitle, laterSub, onLater)
+        sheet.addView(ui.button("Annulla", 0, C.INK, size = 15f) { dlg.dismiss() }, ui.lp(h = ui.dp(48), top = 12))
+        bottomDialog(dlg, sheet)
+    }
+
+    /** Shows `sheet` as a bottom sheet in `dlg`. */
+    private fun bottomDialog(dlg: Dialog, sheet: View) {
+        val wrap = FrameLayout(this)
+        wrap.addView(sheet, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        dlg.setContentView(ScrollView(this).apply { addView(wrap) })
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            w.setGravity(Gravity.BOTTOM)
+            w.setDimAmount(0.6f)
+        }
+        dlg.show()
     }
 
     /**
@@ -1352,33 +1391,87 @@ class MainActivity : Activity() {
         counter({ p.boxes }, { p.boxes = it }, 1, size, numSize,
             sub = { b -> colli(b) + (pack?.takeIf { it > 0 }?.let { " = ${n(it * b)} pz" } ?: "") }) { showResult() }
 
-    /** QUANTI COLLI? card: the suggestion (tap = use it), − n +, how long it will last. */
-    private fun stepper(p: Pending, info: StoreInfo?, pack: Double?): View {
+    /** Sale price (struck through when on offer) and the offer price with its end date. */
+    private fun priceRow(body: LinearLayout, info: StoreInfo?) {
+        val price = info?.price?.takeIf { it > 0 }
+        val promo = info?.promoPrice?.takeIf { it > 0 }
+        if (price == null && promo == null) return
+        val pr = ui.row()
+        pr.background = ui.bg(C.CARD, 12, C.LINE)
+        pr.setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(9))
+        pr.addView(ui.icon(Icons.TAG, C.MUTED, 16, 2f))
+        pr.addView(ui.text("Prezzo ", 12f, C.MUTED), ui.lp(w = ui.WRAP, start = 8))
+        if (price != null) {
+            val sale = ui.num(eur(price), 15f)
+            if (promo != null) ui.struck(sale).setTextColor(C.FAINT)
+            pr.addView(sale)
+        }
+        pr.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+        if (promo != null) {
+            pr.addView(ui.chip("OFFERTA " + eur(promo) + (if (info.promoEnd.isNotEmpty()) " · fino " + info.promoEnd else ""), Color.WHITE, C.RED, 12f))
+        }
+        body.addView(pr, ui.lp(top = 8))
+    }
+
+    /**
+     * The decision card: the system's suggestion (always shown: the purchasing program's number, or the app's
+     * estimate, or why there is none) with "Usa", then − n + for what the store orders and what that means.
+     */
+    private fun decision(p: Pending, info: StoreInfo?, pack: Double?, adv: Advice, inList: Line?): View {
         val c = ui.col(16)
         c.background = ui.bg(C.CARD, 18, C.LINE)
         val head = ui.row()
-        head.addView(ui.text("QUANTI COLLI?", 13f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f))
-        val sugg = info?.suggestBoxes ?: 0
-        if (sugg > 0) {
-            val chip = ui.row()
-            chip.background = ui.bg(C.GREEN_SOFT, 999)
-            chip.setPadding(ui.dp(10), ui.dp(5), ui.dp(10), ui.dp(5))
-            chip.addView(ui.icon(Icons.SPARK, C.GREEN_INK, 13, 2.4f))
-            chip.addView(ui.text("Consigliato $sugg", 12f, C.GREEN_INK, ui.bold), ui.lp(w = ui.WRAP, start = 5))
-            chip.contentDescription = "Usa il consigliato: $sugg"
-            ui.tap(chip, 999) { p.boxes = sugg; showResult() }
-            head.addView(chip)
-        } else if (info != null && info.suggestBoxes == 0) {
-            head.addView(ui.chip("Il sistema non lo ordinerebbe", C.AMBER_INK, C.AMBER_SOFT, 11f))
-        }
-        val askWhy = needsWhy(p.verdict, info, list.report(targetEan(p.verdict, p.scan)), p.boxes) &&
-            ((list.line(targetEan(p.verdict, p.scan))?.boxes ?: 0).let { had -> had == 0 || (Feedbacks.overOrder(info?.suggestBoxes, p.boxes) && !Feedbacks.overOrder(info?.suggestBoxes, had)) })
+        head.addView(ui.iconBadge(Icons.SPARK, C.GREEN_SOFT, C.GREEN_INK, 30, 16, 2.4f))
+        head.addView(ui.text("CONSIGLIO DEL SISTEMA", 12f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f, start = 8))
+        if (adv.estimated) head.addView(ui.chip("STIMA", C.MUTED, 0xFFEEF1F6.toInt(), 11f))
         c.addView(head)
-        c.addView(stepRow(p, pack, 64, 44f), ui.lp(top = 14))
-        if (askWhy) c.addView(ui.text("Se lo aggiungi ti chiediamo il motivo (un tocco)", 12f, C.AMBER_INK).apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
+        val sr = ui.row()
+        val sc = ui.col()
+        val b = adv.boxes
+        if (b == null) {
+            sc.addView(ui.text("Nessun consiglio", 20f, C.MUTED, ui.bold))
+        } else {
+            val big = ui.row(Gravity.BOTTOM)
+            big.addView(ui.num("$b", 34f, if (b > 0) C.GREEN_INK else C.MUTED))
+            big.addView(ui.text(" " + colli(b), 16f, if (b > 0) C.GREEN_INK else C.MUTED, ui.bold), ui.lp(w = ui.WRAP))
+            if (b > 0 && (pack ?: 0.0) > 0) big.addView(ui.text("  = ${n(pack!! * b)} pz", 13f, C.MUTED), ui.lp(w = ui.WRAP))
+            sc.addView(big)
+            if (b == 0) sc.addView(ui.text("Non serve ordinarlo", 13f, C.INK, ui.bold), ui.lp(top = 2))
+        }
+        sc.addView(ui.text(adv.reason, 13f, C.MUTED), ui.lp(top = 2))
+        if (adv.estimated && b != null) sc.addView(ui.text("Calcolata sulle vendite degli ultimi 30 giorni", 11f, C.FAINT), ui.lp(top = 2))
+        sr.addView(sc, ui.lp(w = 0, weight = 1f))
+        if (b != null && b > 0 && b != p.boxes) {
+            sr.addView(ui.button("Usa $b", C.GREEN_SOFT, C.GREEN_INK, size = 15f) { p.boxes = b; showResult() }.apply {
+                setPadding(ui.dp(16), 0, ui.dp(16), 0)
+                contentDescription = "Usa il consigliato: $b"
+            }, ui.lp(w = ui.WRAP, h = ui.dp(44), start = 8))
+        }
+        c.addView(sr, ui.lp(top = 8))
+        c.addView(divider(), ui.lp(h = 1, top = 14))
+
+        val qh = ui.row()
+        qh.addView(ui.text("DA ORDINARE", 12f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f))
+        if (inList != null && inList.boxes > 0) {
+            val by = if (!inList.updatedBy.isNullOrEmpty() && inList.updatedBy != api.deviceName) " · ${inList.updatedBy}" else ""
+            qh.addView(ui.chip("In lista: ${inList.boxes}$by", C.BLUE_INK, C.BLUE_SOFT, 11f))
+        }
+        c.addView(qh, ui.lp(top = 12))
+        c.addView(stepRow(p, pack, 60, 42f), ui.lp(top = 10))
+
+        // what the quantity means, in one line
+        val over = b != null && Feedbacks.overOrder(b, p.boxes)
+        val (txt, fg) = when {
+            b != null && b > 0 && p.boxes == b -> "✓ Come il consigliato" to C.GREEN_INK
+            b == 0 -> "Il sistema non lo ordinerebbe: aggiungendolo ti chiediamo il motivo" to C.AMBER_INK
+            over -> "${p.boxes - b!!} ${colli(p.boxes - b)} oltre il consigliato: ti chiediamo il motivo" to C.AMBER_INK
+            b != null && p.boxes < b -> "${b - p.boxes} ${colli(b - p.boxes)} meno del consigliato" to C.MUTED
+            else -> "" to C.MUTED
+        }
+        if (txt.isNotEmpty()) c.addView(ui.text(txt, 12f, fg, ui.medium).apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
         val withPack = info?.copy(pack = pack) ?: if (pack != null) StoreInfo(pack = pack) else null
         Catalog.coverAfter(withPack, p.boxes)?.let {
-            c.addView(ui.text("Con ${p.boxes} ${colli(p.boxes)} arrivi a ~${Catalog.months(it)} di vendita", 12f, if (it > 120) C.AMBER_INK else C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 12))
+            c.addView(ui.text("Con ${p.boxes} ${colli(p.boxes)} arrivi a ~${Catalog.months(it)} di vendita", 12f, if (it > 120) C.AMBER_INK else C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 4))
         }
         return c
     }
@@ -1438,9 +1531,8 @@ class MainActivity : Activity() {
         step(Icons.TRUCK, C.GREEN_INK, C.GREEN_SOFT, "Di norma: " + (if (d.isNotEmpty()) "fornitore diretto $d" else "fornitore diretto"),
             "Con l'ordine diretto del negozio · costa meno", 10)
         c.addView(divider(), ui.lp(h = 1, top = 12))
-        val price = it.bestPrice?.let { p -> " · " + eur(p) + "/pz" } ?: ""
         step(Icons.BOLT, C.ORANGE, C.ORANGE_SOFT, "Se serve subito: dal grossista",
-            it.wholesalers.joinToString(", ") + price + " · serve un motivo", 12)
+            it.wholesalers.joinToString(", ") + " · serve un motivo", 12)
         if (info != null && (info.stock ?: 0.0) <= 0) {
             c.addView(ui.text("Lo scaffale è vuoto: puoi ordinarlo come urgenza", 12f, C.ORANGE, ui.bold), ui.lp(top = 10))
         }
@@ -1468,18 +1560,6 @@ class MainActivity : Activity() {
 
     private fun piecesText(ean: String, boxes: Int): String =
         packOf(ean)?.let { "${n(it)} pz/collo · ${n(it * boxes)} pz" } ?: ""
-
-    /** Count now (stops the order for a moment) or put it in the "to count" list and go on ordering. */
-    private fun countChoice(ean: String, name: String, sys: StoreInfo) {
-        AlertDialog.Builder(this).setTitle("Giacenza sbagliata?")
-            .setItems(arrayOf("Conta adesso", "Conta dopo · continuo a ordinare")) { _, w ->
-                if (w == 0) showCount(ean, name, sys) else {
-                    countLater(ean, name)
-                    android.widget.Toast.makeText(this, "Da contare dopo · ${toCount.size}", android.widget.Toast.LENGTH_SHORT).show()
-                    redraw()
-                }
-            }.setNegativeButton("Annulla", null).show()
-    }
 
     // ================================================================== to count later
     private fun showToCount(back: () -> Unit) {
@@ -1543,14 +1623,22 @@ class MainActivity : Activity() {
      * The purchasing program would not order it (enough stock, already coming): the store knows better what
      * is on the shelf, so instead of the office checking it later the store says why — with one tap.
      */
-    private fun needsWhy(v: Verdict, info: StoreInfo?, rep: StockReport?, boxes: Int): Boolean {
+    private fun needsWhy(v: Verdict, info: StoreInfo?, rep: StockReport?, boxes: Int, adv: Advice): Boolean {
         if (v.kind != Kind.ORDER && v.kind != Kind.SUBSTITUTE) return false
         info ?: return false
         if (rep?.status == "open") return false          // stock already being corrected: the count is used
-        return info.suggestBoxes == 0 || Catalog.overstocked(info) || Feedbacks.overOrder(info.suggestBoxes, boxes)
+        val b = adv.boxes ?: return false
+        return b == 0 || Feedbacks.overOrder(b, boxes)
     }
 
-    private fun whySheet(ean: String, name: String, info: StoreInfo, sys: StoreInfo?, boxes: Int) {
+    /** Ask why only when this changes something: new in the list, or raised above the suggestion now. */
+    private fun askWhy(p: Pending, info: StoreInfo?, rep: StockReport?, adv: Advice, inList: Line?): Boolean {
+        if (!needsWhy(p.verdict, info, rep, p.boxes, adv)) return false
+        val had = inList?.boxes ?: 0
+        return had == 0 || (Feedbacks.overOrder(adv.boxes, p.boxes) && !Feedbacks.overOrder(adv.boxes, had))
+    }
+
+    private fun whySheet(ean: String, name: String, info: StoreInfo, sys: StoreInfo?, boxes: Int, adv: Advice) {
         val dlg = Dialog(this)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val sheet = ui.col()
@@ -1558,15 +1646,9 @@ class MainActivity : Activity() {
         sheet.setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(18))
         sheet.addView(View(this).apply { background = ui.bg(C.LINE2, 3) }, LinearLayout.LayoutParams(ui.dp(40), ui.dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL })
         sheet.addView(ui.text("Perché lo ordini?", 22f, C.INK, ui.bold), ui.lp(top = 14))
-        val cover = info.coverDays((info.transitBoxes ?: 0.0) * (info.pack ?: 0.0))
-        val why = when {
-            (info.transitBoxes ?: 0.0) > 0 && (info.suggestBoxes ?: 1) == 0 -> "${n(info.transitBoxes)} ${colli((info.transitBoxes ?: 0.0).toInt())} già in arrivo"
-            cover != null -> "A sistema ${n(info.stock)} pz: bastano ${Catalog.months(cover)}"
-            else -> "A sistema ${n(info.stock)} pz e si vende poco"
-        }
-        val more = Feedbacks.overOrder(info.suggestBoxes, boxes)
-        sheet.addView(ui.text(if (more) "Il sistema ne consiglia ${info.suggestBoxes}, tu ne metti $boxes. Lo vede l'ufficio acquisti."
-            else "Il sistema non lo ordinerebbe · $why. Lo vede l'ufficio acquisti.", 13f, C.MUTED), ui.lp(top = 4))
+        val more = Feedbacks.overOrder(adv.boxes, boxes)
+        sheet.addView(ui.text(if (more) "Il sistema ne consiglia ${adv.boxes}, tu ne metti $boxes. Lo vede l'ufficio acquisti."
+            else "Il sistema non lo ordinerebbe · ${adv.reason}. Lo vede l'ufficio acquisti.", 13f, C.MUTED), ui.lp(top = 4))
         fun add(reason: String, before: String = "") {
             dlg.dismiss()
             api.whyUse = Feedbacks.countUse(api.whyUse, reason.substringBefore(" · "))
@@ -1591,18 +1673,18 @@ class MainActivity : Activity() {
         // the reasons this scanner uses most come first (in promotion weeks "Promozione" is on top)
         val opts = LinkedHashMap<String, () -> Unit>()
         if (sys != null) opts["Giacenza sbagliata"] = {
-            option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno: conta adesso o dopo") {
-                AlertDialog.Builder(this).setTitle("La giacenza è sbagliata")
-                    .setItems(arrayOf("Conta adesso e aggiungi", "Aggiungi ora · conta dopo")) { _, w ->
-                        if (w == 0) {
-                            dlg.dismiss()
-                            afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
-                            showCount(ean, name, sys)
-                        } else {
-                            countLater(ean, name)
-                            add("Giacenza da verificare · da contare", "Da contare dopo · ")
-                        }
-                    }.setNegativeButton("Annulla", null).show()
+            option(Icons.ALERT, C.RED_INK, C.RED_SOFT, "La giacenza è sbagliata", "Ne ho meno di quanto dice il sistema") {
+                stockSheet(sys, "Conta adesso e aggiungi", "Conti scaffale e magazzino, lo segnali e l'articolo va in lista",
+                    "Aggiungi ora · contalo dopo", "Va in lista adesso e in «Da contare»: lo conti prima di inviare",
+                    onNow = {
+                        dlg.dismiss()
+                        afterStock = { counted -> add("Giacenza sbagliata · contati $counted pz", "Giacenza segnalata · ") }
+                        showCount(ean, name, sys)
+                    },
+                    onLater = {
+                        countLater(ean, name)
+                        add("Giacenza da verificare · da contare", "In «Da contare» · ")
+                    })
             }
         }
         opts["Promozione o volantino"] = { option(Icons.TAG, C.ORANGE, C.ORANGE_SOFT, "Promozione o volantino", "Ne servono di più per l'offerta") { add("Promozione o volantino") } }
@@ -1829,7 +1911,7 @@ class MainActivity : Activity() {
             body.addView(ui.spacer(12))
         }
         if (chk.isNotEmpty()) {
-            body.addView(ui.text("DA CONTROLLARE · ${chk.size}", 12f, C.AMBER_INK, ui.bold))
+            body.addView(ui.text("DA CONTROLLARE · ${chk.size} · tocca per rivedere", 12f, C.AMBER_INK, ui.bold))
             for (c in chk) {
                 val (fg, fill, line) = when (c.level) {
                     1 -> Triple(C.BLUE_INK, C.BLUE_SOFT, 0xFFC6D5FF.toInt())
@@ -1863,6 +1945,7 @@ class MainActivity : Activity() {
             G("Urgenze", urgentWhy, C.RED, Filter.URGENT, lines.filter { it.boxes > 0 && it.kind == "urgent" }),
             G("Da ricordare", "non disponibili", C.AMBER, Filter.REMIND, lines.filter { it.kind == "remind" }),
         ).filter { it.lines.isNotEmpty() }
+        if (groups.isNotEmpty()) body.addView(ui.text("LA LISTA", 12f, C.MUTED, ui.bold), ui.lp(top = if (chk.isEmpty() && toCount.size == 0) 0 else 16))
         if (groups.isEmpty()) {
             val e = ui.col(24)
             e.gravity = Gravity.CENTER_HORIZONTAL
@@ -1893,7 +1976,7 @@ class MainActivity : Activity() {
                 ui.tap(r, 12) { showLines(g.f) { showReview() } }
                 card.addView(r, ui.lp(h = ui.dp(48)))
             }
-            body.addView(card, ui.lp(top = if (chk.isEmpty()) 0 else 14))
+            body.addView(card, ui.lp(top = 6))
         }
         val last = list.fromLastWeek()
         if (last.isNotEmpty()) {
@@ -2000,7 +2083,15 @@ class MainActivity : Activity() {
             else -> l.reason?.let { "Motivo · $it" } ?: l.ean
         } + (if (!l.updatedBy.isNullOrEmpty() && l.updatedBy != api.deviceName) " · ${l.updatedBy}" else "")
         c.addView(ui.text(sub, 11f, if (l.kind == "urgent") C.RED_INK else C.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, ui.lp(top = 2))
-        if (l.kind != "remind") piecesText(l.ean, l.boxes).takeIf { it.isNotEmpty() }?.let { c.addView(ui.num(it, 11f, C.INK), ui.lp(top = 2)) }
+        if (l.kind != "remind") {
+            val meta = ui.row()
+            piecesText(l.ean, l.boxes).takeIf { it.isNotEmpty() }?.let { meta.addView(ui.num(it, 11f, C.INK)) }
+            if (l.kind != "urgent") Catalog.advise(catalog?.info(l.ean), packOf(l.ean)).boxes?.let { b ->
+                val over = Feedbacks.overOrder(b, l.boxes) || (b == 0 && l.boxes > 0)
+                meta.addView(ui.text((if (meta.childCount > 0) " · " else "") + "consigliato $b", 11f, if (over) C.AMBER_INK else C.GREEN_INK, ui.bold))
+            }
+            if (meta.childCount > 0) c.addView(meta, ui.lp(top = 2))
+        }
         left.addView(c, ui.lp(w = 0, weight = 1f, start = 10))
         ui.tap(left, 10) { openScan(l.origEan ?: l.ean, redraw) }
         r.addView(left, ui.lp(w = 0, weight = 1f))
@@ -2088,7 +2179,8 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Inviare la lista?")
             .setMessage("${list.ordered.size} articoli · ${list.boxes} colli" + (if (list.urgent > 0) " · ${list.urgent} urgenze" else "") +
-                " all'ufficio acquisti." + (if (v != null) "\nPuoi ancora modificarla fino a " + dayTime(v.deadline) + "." else ""))
+                " all'ufficio acquisti." + (if (v != null) "\nPuoi ancora modificarla fino a " + dayTime(v.deadline) + "." else "") +
+                (if (toCount.size > 0) "\n\nAttenzione: ${toCount.size} articoli ancora da contare." else ""))
             .setPositiveButton("Invia") { _, _ -> submit() }
             .setNegativeButton("Annulla", null)
             .show()
@@ -2294,11 +2386,12 @@ class MainActivity : Activity() {
     }
 
     private fun menu() {
-        val items = arrayOf("Aggiorna catalogo e lista", "Scollega questo scanner")
-        AlertDialog.Builder(this).setTitle(api.deviceName.ifEmpty { "Scanner" }).setItems(items) { _, which ->
+        val items = arrayOf("Aggiorna catalogo e lista", "Controlla aggiornamenti dell'app", "Scollega questo scanner")
+        AlertDialog.Builder(this).setTitle(api.deviceName.ifEmpty { "Scanner" } + " · app " + Updater.installedName(this)).setItems(items) { _, which ->
             when (which) {
                 0 -> { refreshCatalog(true); sync(false) }
-                1 -> AlertDialog.Builder(this)
+                1 -> checkUpdate(true)
+                2 -> AlertDialog.Builder(this)
                     .setTitle("Scollegare lo scanner?")
                     .setMessage("Per usarlo di nuovo servirà un nuovo codice dall'ufficio acquisti." +
                         (if (list.pending.isNotEmpty()) "\n${list.pending.size} modifiche non ancora inviate andranno perse." else ""))
@@ -2307,6 +2400,79 @@ class MainActivity : Activity() {
                     .show()
             }
         }.show()
+    }
+
+    // ================================================================== app update
+    private var update: AppUpdate? = null
+    private var updateAt = 0L
+
+    /** Asks the platform for a newer app (every few hours, and from the menu). */
+    private fun checkUpdate(manual: Boolean) {
+        updateAt = System.currentTimeMillis()
+        Thread {
+            val u = Updater.latest(api.baseUrl)
+            val mine = Updater.installed(this)
+            main.post {
+                update = if (AppUpdate.isNewer(u, mine)) u else null
+                if (screen == Screen.HOME) showHome()
+                if (manual) {
+                    val nu = update
+                    if (nu != null) startUpdate(nu)
+                    else AlertDialog.Builder(this).setMessage(if (u == null) "Nessuna connessione o nessuna versione pubblicata: riprova più tardi."
+                        else "L'app è aggiornata (versione ${Updater.installedName(this)}).").setPositiveButton("OK", null).show()
+                }
+            }
+        }.start()
+    }
+
+    /** Confirm → (allow installs, once) → download with progress → system installer. */
+    private fun startUpdate(u: AppUpdate) {
+        if (!Updater.canInstall(this)) {
+            AlertDialog.Builder(this).setTitle("Permetti gli aggiornamenti")
+                .setMessage("Solo la prima volta: nella pagina che si apre attiva «Consenti da questa fonte», poi torna qui e tocca di nuovo «Aggiorna».")
+                .setPositiveButton("Apri impostazioni") { _, _ -> Updater.openInstallPermission(this) }
+                .setNegativeButton("Annulla", null).show()
+            return
+        }
+        AlertDialog.Builder(this).setTitle("Aggiornare l'app?")
+            .setMessage("Versione ${Updater.installedName(this)} → ${u.versionName}" + (if (u.notes.isNotEmpty()) "\n${u.notes}" else "") +
+                "\n\nCi vuole circa un minuto. La lista, le modifiche non ancora inviate e il collegamento restano.")
+            .setPositiveButton("Aggiorna") { _, _ -> downloadUpdate(u) }
+            .setNegativeButton("Più tardi", null).show()
+    }
+
+    private fun downloadUpdate(u: AppUpdate) {
+        api.savePending(list)
+        val dlg = Dialog(this)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dlg.setCancelable(false)
+        val c = ui.col(20)
+        c.background = ui.bg(C.CARD, 22)
+        c.addView(ui.text("Scarico l'aggiornamento", 18f, C.INK, ui.bold))
+        val pct = ui.text("0%", 13f, C.MUTED)
+        val bar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
+        c.addView(bar, ui.lp(top = 14))
+        c.addView(pct, ui.lp(top = 6))
+        dlg.setContentView(c)
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            w.setLayout((resources.displayMetrics.widthPixels * 0.88).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        dlg.show()
+        Thread {
+            val r = runCatching {
+                val f = Updater.download(this, api.baseUrl, u) { p -> main.post { bar.progress = p; pct.text = "$p%" } }
+                main.post { pct.text = "Installazione…" }
+                Updater.install(this, f)
+            }
+            main.post {
+                dlg.dismiss()
+                r.exceptionOrNull()?.let { e ->
+                    AlertDialog.Builder(this).setTitle("Aggiornamento non riuscito")
+                        .setMessage((e.message ?: "Errore") + "\nRiprova con il Wi-Fi.").setPositiveButton("OK", null).show()
+                }
+            }
+        }.start()
     }
 
     // ================================================================== sound
