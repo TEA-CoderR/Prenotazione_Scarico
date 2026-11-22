@@ -171,3 +171,30 @@ object Feedbacks {
         return Summary(ordered, reduced, none, sub)
     }
 }
+
+/**
+ * Items to count later, kept on this scanner: while ordering the store marks "the stock looks wrong" without
+ * stopping, and counts them all together afterwards (each count is then reported as usual).
+ */
+class ToCount(saved: String = "") {
+    data class Item(val ean: String, val name: String, val at: Long)
+
+    private val items = LinkedHashMap<String, Item>()
+
+    init {
+        for (l in saved.split('\n')) {
+            val p = l.split('\t')
+            if (p.size >= 3 && p[0].isNotEmpty()) items[key(p[0])] = Item(p[0], p[1], p[2].toLongOrNull() ?: 0)
+        }
+    }
+
+    private fun key(ean: String) = ean.trimStart('0')
+
+    fun add(ean: String, name: String, at: Long) { items[key(ean)] = Item(ean, name.replace('\t', ' ').replace('\n', ' '), at) }
+    fun remove(ean: String): Boolean = items.remove(key(ean)) != null
+    fun has(ean: String) = key(ean) in items
+    val size get() = items.size
+    /** newest first */
+    fun all(): List<Item> = items.values.sortedByDescending { it.at }
+    fun save(): String = items.values.joinToString("\n") { "${it.ean}\t${it.name}\t${it.at}" }
+}

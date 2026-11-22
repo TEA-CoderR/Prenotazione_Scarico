@@ -134,6 +134,11 @@ class Api(private val ctx: Context) {
         get() = prefs.getString("counter", "") ?: ""
         set(v) = prefs.edit().putString("counter", v.trim()).apply()
 
+    /** Items marked "count later" on this scanner (ToCount.save()). */
+    var toCount: String
+        get() = prefs.getString("to_count", "") ?: ""
+        set(v) = prefs.edit().putString("to_count", v).apply()
+
     /** How often this scanner chose each "why do you order it" reason (most used shown first). */
     var whyUse: String
         get() = prefs.getString("why_use", "") ?: ""
