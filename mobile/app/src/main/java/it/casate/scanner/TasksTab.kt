@@ -13,9 +13,9 @@ internal fun MainActivity.tasksTab(): View {
     val root = ui.col()
     root.setBackgroundColor(C.CANVAS)
     val n = todoCount()
-    root.addView(ui.largeTitle("Da fare", if (n == 0) "Niente in sospeso" else "$n da fare"))
+    root.addView(header("Da fare", if (n == 0) "Niente in sospeso" else "$n da fare", C.ON_NAVY_MUTED) { go(MainActivity.Tab.SCAN) })
     val body = ui.col()
-    body.setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(20))
+    body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(20))
 
     fun section(title: String, count: Int, color: Int, fill: (LinearLayout) -> Unit) {
         val h = ui.row()

@@ -159,8 +159,7 @@ class MainActivity : Activity() {
             Tab.TASKS -> tasksTab()
         }
         col.addView(content, ui.lp(h = 0, weight = 1f))
-        col.addView(bottomNav())
-        statusBar(dark = tab == Tab.SCAN)
+        statusBar(dark = true)
         page.removeAllViews()
         page.addView(col)
         afterRender?.invoke()
@@ -187,42 +186,47 @@ class MainActivity : Activity() {
     /** Things waiting in the To-do tab (badge). */
     internal fun todoCount(): Int = toCount.size + checks().size + backInStock().size + (if (update != null) 1 else 0)
 
-    private fun bottomNav(): View {
-        val bar = ui.row()
-        bar.setBackgroundColor(Color.WHITE)
-        bar.elevation = ui.dpf(8f)
-        bar.setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(8))
-        data class Item(val t: Tab, val icon: Icons.Spec, val label: String, val badge: Int, val alert: Boolean)
-        val items = listOf(
-            Item(Tab.SCAN, Icons.BARCODE, "Scansiona", 0, false),
-            Item(Tab.LIST, Icons.LIST, "Lista", list.ordered.size, false),
-            Item(Tab.TASKS, Icons.CHECK, "Da fare", todoCount(), true),
-        )
-        for (it in items) {
-            val on = it.t == tab
-            val c = ui.col()
-            c.gravity = Gravity.CENTER_HORIZONTAL
-            c.setPadding(0, ui.dp(4), 0, ui.dp(2))
-            val ind = FrameLayout(this)
-            ind.background = if (on) ui.bg(C.BLUE_SOFT, 999) else null
-            ind.addView(ui.icon(it.icon, if (on) C.BLUE_INK else C.MUTED, 22, if (on) 2.4f else 2f),
-                FrameLayout.LayoutParams(ui.dp(22), ui.dp(22), Gravity.CENTER))
-            if (it.badge > 0) {
-                val b = ui.text(if (it.badge > 99) "99+" else "${it.badge}", 10f, Color.WHITE, ui.bold).apply {
-                    gravity = Gravity.CENTER
-                    background = ui.bg(if (it.alert) C.RED else C.NAVY, 999)
-                    setPadding(ui.dp(5), 0, ui.dp(5), 0)
-                    minWidth = ui.dp(18)
-                }
-                ind.addView(b, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, ui.dp(18), Gravity.TOP or Gravity.END).apply { topMargin = ui.dp(1); marginEnd = ui.dp(8) })
+    /** Navy bar of the inner pages: Back · store · week · what is in the list. */
+    internal fun topBar(back: Boolean, onBack: () -> Unit = { onBackPressed() }): View {
+        val r = ui.row()
+        r.setBackgroundColor(C.NAVY)
+        r.setPadding(ui.dp(if (back) 8 else 16), 0, ui.dp(16), 0)
+        if (back) {
+            val b = ui.icon(Icons.BACK, Color.WHITE, 40, 2.4f).apply {
+                setPadding(ui.dp(9), ui.dp(9), ui.dp(9), ui.dp(9))
+                contentDescription = "Indietro"
             }
-            c.addView(ind, LinearLayout.LayoutParams(ui.dp(64), ui.dp(32)))
-            c.addView(ui.text(it.label, 12f, if (on) C.INK else C.MUTED, if (on) ui.bold else ui.medium), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, top = 4))
-            c.contentDescription = it.label
-            ui.tap(c, 16) { if (!on) { c.haptic(); go(it.t) } }
-            bar.addView(c, ui.lp(w = 0, weight = 1f))
+            ui.tap(b, 10, true) { onBack() }
+            r.addView(b, ui.fixed(40, 40))
         }
-        return bar
+        r.addView(ui.text(store, 15f, Color.WHITE, ui.bold))
+        val wk = list.server?.week?.let { weekNo(it).lowercase() }.orEmpty()
+        if (wk.isNotEmpty()) r.addView(ui.text("  · $wk", 14f, C.ON_NAVY_MUTED))
+        r.addView(View(this), ui.lp(w = 0, h = 1, weight = 1f))
+        r.addView(ui.num("${list.ordered.size} art · ${list.boxes} colli", 13f, C.ON_NAVY))
+        r.layoutParams = ui.lp(h = ui.dp(52))
+        return r
+    }
+
+    /** Navy header with a back arrow, a title and a line under it (List, To do). */
+    internal fun header(title: String, sub: String?, subColor: Int, onBack: () -> Unit): LinearLayout {
+        val head = ui.col()
+        head.setBackgroundColor(C.NAVY)
+        head.setPadding(ui.dp(14), ui.dp(12), ui.dp(18), ui.dp(14))
+        val t = ui.row()
+        val b = ui.icon(Icons.BACK, Color.WHITE, 36, 2.2f).apply {
+            setPadding(ui.dp(9), ui.dp(9), ui.dp(9), ui.dp(9))
+            background = ui.bg(C.NAVY3, 10)
+            contentDescription = "Indietro"
+        }
+        ui.tap(b, 10, true) { onBack() }
+        t.addView(b, ui.fixed(36, 36))
+        val tc = ui.col()
+        tc.addView(ui.text(title, 18f, Color.WHITE, ui.bold).oneLine())
+        if (!sub.isNullOrEmpty()) tc.addView(ui.text(sub, 12f, subColor, ui.medium).oneLine(), ui.lp(top = 2))
+        t.addView(tc, ui.lp(w = 0, weight = 1f, start = 10))
+        head.addView(t)
+        return head
     }
 
     // ================================================================== scanning
