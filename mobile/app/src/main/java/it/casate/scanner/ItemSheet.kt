@@ -471,13 +471,13 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
         }
         Kind.URGENT_ONLY -> {
             val inIt = inList != null && inList.boxes > 0 && inList.kind == "urgent"
-            pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Urgenza tolta") }
+            pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Tolto dalla lista") }
                 else ui.button("Non serve", 0, C.INK, size = 15f) { done(null) },
                 ui.primary(if (inIt) "Salva · ${p.boxes}" else "Ordina urgenza · ${p.boxes}", C.ORANGE, true, Icons.BOLT) {
                     val it = v.item!!
                     fun save(why: String) {
                         change(Line(it.ean, it.name.take(120), p.boxes, "urgent", reason = why.take(120), updatedBy = api.deviceName, updatedAt = System.currentTimeMillis()))
-                        done("Urgenza in lista: ${it.name.take(36)} · ${p.boxes}")
+                        done("In lista · non in Griglia: ${it.name.take(32)} · ${p.boxes}")
                     }
                     val saved = inList?.reason
                     if (inIt && !saved.isNullOrEmpty()) save(saved)

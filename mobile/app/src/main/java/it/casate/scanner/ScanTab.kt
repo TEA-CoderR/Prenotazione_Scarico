@@ -61,12 +61,12 @@ internal fun MainActivity.scanTab(): View {
         val c = ui.col()
         c.setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
         c.addView(ui.num(value, 26f, color))
-        c.addView(ui.text(label, 12f, C.ON_NAVY_MUTED), ui.lp(top = 2))
+        c.addView(ui.text(label, 12f, C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 2))
         stats.addView(c, ui.lp(w = 0, weight = 1f))
     }
     stat("${list.ordered.size}", "articoli", Color.WHITE)
     stat("${list.boxes}", "colli", Color.WHITE)
-    stat("${list.urgent}", if (list.urgent == 1) "urgenza" else "urgenze", if (list.urgent > 0) C.CORAL else Color.WHITE)
+    stat("${list.urgent}", "non in Griglia", if (list.urgent > 0) C.CORAL else Color.WHITE)
     card.addView(stats, ui.lp(top = 8))
     if (v != null) {
         val f = ((System.currentTimeMillis() - (v.deadline - 7 * 86_400_000L)).toFloat() / (7 * 86_400_000L)).coerceIn(0.02f, 1f)
@@ -204,7 +204,7 @@ internal fun MainActivity.scanTab(): View {
             r.addView(ui.dot(lineColor(l.kind)))
             r.addView(ui.text(l.name.ifEmpty { l.ean }, 14f, C.INK, ui.medium).oneLine(), ui.lp(w = 0, weight = 1f, start = 10))
             when (l.kind) {
-                "urgent" -> r.addView(ui.chip("URGENZA", C.ORANGE, C.ORANGE_SOFT, 11f))
+                "urgent" -> r.addView(ui.chip("NON IN GRIGLIA", C.ORANGE, C.ORANGE_SOFT, 11f))
                 "remind" -> r.addView(ui.chip("DA RICORDARE", C.AMBER_INK, C.AMBER_SOFT, 11f))
                 else -> {
                     r.addView(ui.num("${l.boxes}", 14f))
