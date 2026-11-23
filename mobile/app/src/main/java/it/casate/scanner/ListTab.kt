@@ -7,7 +7,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 
 /** Filter of the List tab (chips under the title). */
-internal enum class ListFilter(val label: String) { ALL("Tutti"), CHECK("Da controllare"), URGENT("Urgenze"), SUB("Sostituti"), REMIND("Avvisi") }
+internal enum class ListFilter(val label: String) { ALL("Tutti"), CHECK("Da controllare"), URGENT("Non in Griglia"), SUB("Sostituti"), REMIND("Avvisi") }
 
 private var filter = ListFilter.ALL
 
@@ -26,13 +26,13 @@ internal fun MainActivity.listTab(): View {
     for ((i, s3) in listOf(
         Triple("${list.ordered.size}", "articoli", android.graphics.Color.WHITE),
         Triple("${list.boxes}", "colli", android.graphics.Color.WHITE),
-        Triple("${list.urgent}", if (list.urgent == 1) "urgenza" else "urgenze", if (list.urgent > 0) C.CORAL else android.graphics.Color.WHITE),
+        Triple("${list.urgent}", "non in Griglia", if (list.urgent > 0) C.CORAL else android.graphics.Color.WHITE),
     ).withIndex()) {
         val c = ui.col()
         c.background = ui.bg(C.NAVY2, 12)
         c.setPadding(ui.dp(10), ui.dp(8), ui.dp(8), ui.dp(8))
         c.addView(ui.num(s3.first, 20f, s3.third))
-        c.addView(ui.text(s3.second, 11f, C.ON_NAVY_MUTED), ui.lp(top = 2))
+        c.addView(ui.text(s3.second, 11f, C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 2))
         stats.addView(c, ui.lp(w = 0, weight = 1f, start = if (i == 0) 0 else 6))
     }
     head.addView(stats, ui.lp(top = 12))
@@ -112,7 +112,7 @@ internal fun MainActivity.listTab(): View {
         b.addView(ui.text("Riprendi la settimana scorsa · ${last.size}", 14f, C.INK, ui.medium), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
         ui.tap(b, 14) {
             AlertDialog.Builder(this).setTitle("Aggiungere ${last.size} articoli?")
-                .setMessage("Con gli stessi colli della settimana scorsa (urgenze escluse).")
+                .setMessage("Con gli stessi colli della settimana scorsa (esclusi i non in Griglia).")
                 .setPositiveButton("Aggiungi") { _, _ ->
                     val now = System.currentTimeMillis()
                     for (l in last) list.set(l.copy(updatedBy = api.deviceName, updatedAt = now))
@@ -157,7 +157,7 @@ private fun MainActivity.lineRow(l: Line, warn: MainActivity.Check?): View {
     val (sub, color) = when {
         warn != null -> warn.text to C.AMBER_INK
         l.kind == "sub" -> ("Al posto di " + (l.origName ?: l.origEan ?: "")) to C.BLUE_INK
-        l.kind == "urgent" -> ("Urgenza · " + (l.reason ?: "")) to C.ORANGE
+        l.kind == "urgent" -> ("Non in Griglia · " + (l.reason ?: "")) to C.ORANGE
         l.kind == "remind" -> "Avvisami quando torna" to C.AMBER_INK
         !l.reason.isNullOrEmpty() -> ("Motivo · " + l.reason) to C.MUTED
         adv != null -> "Consigliato $adv" to (if (Feedbacks.overOrder(adv, l.boxes)) C.AMBER_INK else C.MUTED)
@@ -187,7 +187,7 @@ private fun MainActivity.lineRow(l: Line, warn: MainActivity.Check?): View {
 private fun MainActivity.confirmSend() {
     val v = list.server
     val chk = checks().size
-    val msg = "${list.ordered.size} articoli · ${list.boxes} colli" + (if (list.urgent > 0) " · ${list.urgent} urgenze" else "") +
+    val msg = "${list.ordered.size} articoli · ${list.boxes} colli" + (if (list.urgent > 0) " · ${list.urgent} non in Griglia" else "") +
         (if (v != null) "\nModificabile fino a ${shortDay(v.deadline)}." else "") +
         (if (chk > 0) "\n\n$chk da controllare." else "") + (if (toCount.size > 0) "\n${toCount.size} ancora da contare." else "")
     AlertDialog.Builder(this).setTitle("Inviare all'ufficio acquisti?").setMessage(msg)
