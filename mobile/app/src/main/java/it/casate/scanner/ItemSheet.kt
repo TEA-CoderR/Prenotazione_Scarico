@@ -68,7 +68,7 @@ internal fun MainActivity.showItem() {
 
     val body = ui.col()
     body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(16))
-    val hero = heroBand(v)
+    val hero = heroBand(v, adv)
 
     // the product (for a substitute: the old one crossed out, then the new one)
     if (v.kind == Kind.SUBSTITUTE) {
@@ -158,11 +158,13 @@ private fun MainActivity.priceLine(info: StoreInfo?): View? {
 }
 
 /** The coloured band of the verdict (v3 look). */
-private fun MainActivity.heroBand(v: Verdict): View {
+private fun MainActivity.heroBand(v: Verdict, adv: Advice?): View {
     data class Hero(val bg: Int, val fg: Int, val sub: Int, val icon: Icons.Spec, val title: String, val line: String)
     val h = when (v.kind) {
+        // green = can be ordered (a fact about the item); whether the system advises it is said in the card below
         Kind.ORDER -> Hero(C.GREEN, Color.WHITE, 0xFFD5F5E8.toInt(), Icons.CHECK, "ORDINABILE",
-            "In Griglia · " + v.item!!.wholesalers.size + (if (v.item.wholesalers.size == 1) " grossista lo ha" else " grossisti lo hanno"))
+            if (adv?.boxes == 0) "In Griglia · per ora il sistema non lo consiglia"
+            else "In Griglia · " + v.item!!.wholesalers.size + (if (v.item.wholesalers.size == 1) " grossista lo ha" else " grossisti lo hanno"))
         Kind.SUBSTITUTE -> Hero(C.BLUE, Color.WHITE, 0xFFDCE6FF.toInt(), Icons.SWAP, "SOSTITUITO", "Questo codice non c'è più · ordina il nuovo")
         Kind.NOT_AVAILABLE -> Hero(C.AMBER, 0xFF2B1A00.toInt(), 0xFF4A3300.toInt(), Icons.CLOCK, "NON DISPONIBILE", "In Griglia, ma questa settimana nessun grossista lo ha")
         Kind.URGENT_ONLY -> Hero(C.ORANGE, Color.WHITE, 0xFFFFE2CC.toInt(), Icons.INFO,
@@ -230,10 +232,12 @@ private fun MainActivity.stockRow(p: Pending, ean: String, name: String, sys: St
 /** QUANTI COLLI? card: the suggestion (tap = use it), − n +, what it means; the reason when needed. */
 private fun MainActivity.decision(body: LinearLayout, p: Pending, info: StoreInfo?, pack: Double?, adv: Advice, inList: Line?) {
     val c = ui.col(16)
-    c.background = ui.bg(C.CARD, 18, C.LINE)
+    val b = adv.boxes
+    val warn = needsWhy(p, info, adv)
+    // amber = the system would not order this (or not this many): you can, with a reason
+    c.background = if (warn) ui.bg(0xFFFFFBF0.toInt(), 18, 0xFFF5D78E.toInt()) else ui.bg(C.CARD, 18, C.LINE)
     val head = ui.row()
     head.addView(ui.text("QUANTI COLLI?", 13f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f))
-    val b = adv.boxes
     if (b != null) {
         val chip = ui.row()
         chip.background = ui.bg(if (b > 0) C.GREEN_SOFT else C.AMBER_SOFT, 999)
@@ -245,7 +249,8 @@ private fun MainActivity.decision(body: LinearLayout, p: Pending, info: StoreInf
         head.addView(chip)
     }
     c.addView(head)
-    c.addView(ui.text(if (b == 0) "Il sistema non lo ordinerebbe · " + adv.reason else adv.reason, 12f, C.MUTED).lines(2), ui.lp(top = 6))
+    c.addView(ui.text(if (b == 0) "Il sistema non lo ordinerebbe · " + adv.reason else adv.reason, 12f, if (b == 0) C.AMBER_INK else C.MUTED).lines(2), ui.lp(top = 6))
+    dataAge()?.let { c.addView(ui.text(it, 11f, C.AMBER_INK), ui.lp(top = 2)) }
     if (inList != null && inList.boxes > 0) {
         val by = if (!inList.updatedBy.isNullOrEmpty() && inList.updatedBy != api.deviceName) " · ${inList.updatedBy}" else ""
         c.addView(ui.text("Già in lista: ${inList.boxes} ${colli(inList.boxes)}$by", 12f, C.BLUE_INK, ui.bold), ui.lp(top = 4))
@@ -264,7 +269,7 @@ private fun MainActivity.decision(body: LinearLayout, p: Pending, info: StoreInf
     body.addView(c, ui.lp(top = 14))
 
     // the reason is asked in a pop-up when adding (see askReason)
-    if (needsWhy(p, info, adv)) {
+    if (warn) {
         val h = ui.row()
         h.addView(ui.icon(Icons.ALERT, C.AMBER_INK, 14, 2.2f))
         h.addView(ui.text(if (b == 0) "Il sistema non lo consiglia · aggiungendolo ti chiediamo il motivo"
@@ -450,7 +455,7 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
             c.addView(hint, ui.lp(bottom = 10))
             pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Tolto dalla lista: ${name.take(36)}") }
                 else ui.button("Annulla", 0, C.INK, size = 15f) { done(null) },
-                ui.primary(label, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN, true,
+                ui.primary(label, if (need) 0xFFB45309.toInt() else if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN, true,
                     if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS) {
                     // ask again only if the decision changed since the saved reason
                     val saved = inList?.reason
@@ -571,7 +576,7 @@ private fun MainActivity.stockChoices(p: Pending, ean: String, name: String, sys
     val foot = ui.col()
     foot.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
     foot.addView(ui.button("Annulla", 0, C.INK, size = 15f) { p.mode = 0; showItem() }, ui.lp(h = ui.dp(52)))
-    sheet.show(heroBand(p.verdict), body, foot)
+    sheet.show(heroBand(p.verdict, null), body, foot)
 }
 
 private fun MainActivity.commitWithReason(p: Pending, ean: String, name: String, reason: String): String? {
@@ -598,4 +603,12 @@ private fun MainActivity.countFromSheet(p: Pending, ean: String, name: String, s
             }
         },
         back = { pending = keep; keep.mode = 0; render(); showItem() })
+}
+
+/** "Dati del 20/11" when the store numbers are more than 2 days old (the advice is computed from them). */
+internal fun MainActivity.dataAge(): String? {
+    val d = catalog?.dataDate?.takeIf { it.length == 10 } ?: return null
+    val day = runCatching { java.time.LocalDate.parse(d) }.getOrNull() ?: return null
+    if (java.time.temporal.ChronoUnit.DAYS.between(day, java.time.LocalDate.now()) <= 2) return null
+    return "Dati del ${d.substring(8, 10)}/${d.substring(5, 7)}: il consiglio può non essere aggiornato"
 }

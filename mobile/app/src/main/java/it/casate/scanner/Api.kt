@@ -284,7 +284,9 @@ class Api(private val ctx: Context) {
                     lastSaleDays = num(r, 10)?.toInt(), suspect = (num(r, 11) ?: 0.0) > 0,
                 )
             }
-            return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info, o.optString("imageUrl"))
+            val adv = o.optJSONObject("advice")
+            return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info, o.optString("imageUrl"),
+                horizon = adv?.optInt("horizon", 14) ?: 14, dataDate = adv?.optString("dataDate", "") ?: "")
         }
     }
 }
