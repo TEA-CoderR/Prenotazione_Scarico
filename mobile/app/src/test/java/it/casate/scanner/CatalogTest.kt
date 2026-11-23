@@ -77,10 +77,11 @@ class CatalogTest {
         assertEquals(2, sys.boxes)
         assertFalse(sys.estimated)
         assertTrue(sys.reason.contains("9 giorni"))
-        // not computed (not in Griglia): estimated from the last 30 days = one month − stock − coming
-        val est = Catalog.advise(StoreInfo(stock = 4.0, sold30 = 20.0, transitBoxes = 1.0, pack = 6.0), null)
-        assertEquals(2, est.boxes)                         // (20 − 4 − 6) / 6 → 2
+        // not computed: estimated until the next delivery (horizon days, 14 by default), not a whole month
+        val est = Catalog.advise(StoreInfo(stock = 4.0, sold30 = 60.0, transitBoxes = 1.0, pack = 6.0), null)
+        assertEquals(3, est.boxes)                         // (2/day × 14 − 4 − 6) / 6 → 3
         assertTrue(est.estimated)
+        assertEquals(0, Catalog.advise(StoreInfo(stock = 4.0, sold30 = 20.0, transitBoxes = 1.0, pack = 6.0), null).boxes)
         // already enough: 0, and why
         val none = Catalog.advise(StoreInfo(stock = 3.0, sold30 = 1.0, transitBoxes = 2.0, suggestBoxes = 0, pack = 6.0), null)
         assertEquals(0, none.boxes)
@@ -90,7 +91,7 @@ class CatalogTest {
         assertNull(Catalog.advise(null, 6.0).boxes)
         assertNull(Catalog.advise(StoreInfo(stock = 0.0, sold30 = 0.0), 6.0).boxes)
         // the list starts from the suggestion (estimate too), else 1
-        assertEquals(2, Catalog.startBoxes(null, StoreInfo(stock = 4.0, sold30 = 20.0, transitBoxes = 1.0, pack = 6.0)))
+        assertEquals(3, Catalog.startBoxes(null, StoreInfo(stock = 4.0, sold30 = 60.0, transitBoxes = 1.0, pack = 6.0)))
         assertEquals(1, Catalog.startBoxes(null, null))
     }
 

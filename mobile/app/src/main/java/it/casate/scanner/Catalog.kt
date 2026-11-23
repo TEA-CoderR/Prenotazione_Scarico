@@ -75,7 +75,12 @@ class Catalog(
     private val items: Map<String, Item>,
     private val store: Map<String, StoreInfo> = emptyMap(),
     val imageUrl: String = "",
+    /** Days the advice covers (data day → next delivery after the deadline), from the purchasing program. */
+    val horizon: Int = 14,
+    /** Day the store numbers are from (yyyy-mm-dd), "" = unknown. */
+    val dataDate: String = "",
 ) {
+    init { Companion.horizon = horizon.coerceIn(7, 28) }
     val size get() = items.size
     val hasStoreData get() = store.isNotEmpty()
 
@@ -137,6 +142,9 @@ class Catalog(
          * the purchasing program's number when it computed one (Griglia items and substitutes), else an
          * estimate from the last 30 days (one month of sales − stock − what is coming), else nothing.
          */
+        /** Days the estimate covers (set by the last catalog loaded; see the purchasing program's store_advice). */
+        @Volatile var horizon: Int = 14
+
         fun advise(info: StoreInfo?, pack: Double?): Advice {
             info ?: return Advice(null, false, "Dati del negozio non ancora pubblicati")
             val pk = (info.pack ?: pack)?.takeIf { it > 0 }
@@ -151,7 +159,8 @@ class Catalog(
             if (sys != null) {
                 boxes = sys.coerceAtLeast(0); estimated = false
             } else if (pk != null && sold > 0) {
-                boxes = ceil((sold - stock - transitPcs) / pk - 1e-9).toInt().coerceAtLeast(0); estimated = true
+                // until the next delivery (weekly order), not a whole month
+                boxes = ceil((sold / 30.0 * horizon - stock - transitPcs) / pk - 1e-9).toInt().coerceAtLeast(0); estimated = true
             } else if (sold <= 0 && stock > 0) {
                 boxes = 0; estimated = true
             } else return Advice(null, false, if (pk == null) "Senza pezzi per collo: decidi tu" else "Nessuna vendita negli ultimi 30 giorni")
