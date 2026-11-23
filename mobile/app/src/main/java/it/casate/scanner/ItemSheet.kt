@@ -262,40 +262,89 @@ private fun MainActivity.decision(body: LinearLayout, p: Pending, info: StoreInf
     c.addView(note, ui.lp(top = 8))
     body.addView(c, ui.lp(top = 14))
 
-    // the reason, only when the system would not order this many
+    // the reason is asked in a pop-up when adding (see askReason)
     if (needsWhy(p, info, adv)) {
-        val over = b != null && b > 0
-        val w = ui.col(14)
-        w.background = ui.bg(C.AMBER_SOFT, 16, C.AMBER_LINE)
-        w.addView(ui.text(if (over) "Perché più del consigliato?" else "Perché lo ordini?", 15f, C.AMBER_INK, ui.bold))
-        w.addView(ui.text("Un tocco · lo vede l'ufficio acquisti", 12f, C.AMBER_INK), ui.lp(top = 2))
-        val flow = FlowLayout(this, ui.dp(8), ui.dp(8))
-        for (r in Feedbacks.byUse(WHY_REASONS.dropLast(1), api.whyUse) + "Altro") {
-            flow.addView(ui.choice(r, p.reason == r, C.NAVY) {
-                if (r == "Giacenza sbagliata") { p.mode = 1; p.stockForWhy = true; showItem(); return@choice }
-                p.reason = if (p.reason == r) null else r
-                showItem()
-            })
-        }
-        w.addView(flow, ui.lp(top = 10))
-        if (p.reason == "Altro") w.addView(otherField(p), ui.lp(top = 10))
-        body.addView(w, ui.lp(top = 10))
+        val h = ui.row()
+        h.addView(ui.icon(Icons.ALERT, C.AMBER_INK, 14, 2.2f))
+        h.addView(ui.text(if (b == 0) "Il sistema non lo consiglia · aggiungendolo ti chiediamo il motivo"
+            else "Più del consigliato · aggiungendolo ti chiediamo il motivo", 12f, C.AMBER_INK, ui.bold).lines(2), ui.lp(w = 0, weight = 1f, start = 6))
+        c.addView(h, ui.lp(top = 10))
     }
 }
 
-private fun MainActivity.otherField(p: Pending): View = EditText(this).apply {
-    hint = "Scrivi il motivo"
-    setText(p.other)
-    setSingleLine()
-    textSize = 15f
-    imeOptions = EditorInfo.IME_ACTION_DONE
-    background = ui.bg(C.CARD, 12, C.LINE2)
-    setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
-    addTextChangedListener(object : android.text.TextWatcher {
-        override fun afterTextChanged(s: android.text.Editable?) { p.other = s?.toString().orEmpty() }
-        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-    })
+/**
+ * Pop-up that comes up after pressing Aggiungi / Ordina urgenza: says why the system would not
+ * order it, then one tap on a reason submits. «Altro» asks for a sentence; «Giacenza sbagliata»
+ * goes to the stock choices instead.
+ */
+private fun MainActivity.askReason(title: String, why: String, sub: String, accent: Int, soft: Int, ink: Int,
+                                   reasons: List<String>, onStock: (() -> Unit)?, onPick: (String) -> Unit) {
+    val d = android.app.Dialog(this)
+    d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+    val box = ui.col(20)
+    box.background = ui.bg(C.CARD, 24)
+    val bar = View(this).apply { background = ui.bg(C.LINE2, 3) }
+    box.addView(bar, LinearLayout.LayoutParams(ui.dp(40), ui.dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+    box.addView(ui.text(title, 21f, C.INK, ui.bold), ui.lp(top = 14))
+    val info = ui.row()
+    info.background = ui.bg(soft, 14)
+    info.setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
+    info.addView(ui.icon(Icons.ALERT, ink, 20, 2.2f))
+    val t = ui.col()
+    t.addView(ui.text(why, 15f, ink, ui.bold).lines(2))
+    if (sub.isNotEmpty()) t.addView(ui.text(sub, 13f, ink).lines(3), ui.lp(top = 2))
+    info.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+    box.addView(info, ui.lp(top = 12))
+    box.addView(ui.text("Scegli il motivo · lo vede l'ufficio acquisti", 12f, C.MUTED), ui.lp(top = 14))
+    val list = ui.col()
+    fun row(label: String, icon: Icons.Spec, onClick: () -> Unit): View {
+        val r = ui.row()
+        r.minimumHeight = ui.dp(54)
+        r.background = ui.bg(C.CARD, 14, C.LINE)
+        r.setPadding(ui.dp(14), 0, ui.dp(12), 0)
+        r.addView(ui.icon(icon, accent, 18, 2.2f))
+        r.addView(ui.text(label, 16f, C.INK, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = 12))
+        r.addView(ui.icon(Icons.NEXT, C.MUTED, 16, 2.2f))
+        ui.tap(r, 14) { r.haptic(); onClick() }
+        return r
+    }
+    for (r in reasons) {
+        when {
+            r == "Giacenza sbagliata" && onStock != null -> list.addView(row("La giacenza è sbagliata", Icons.BOX) { d.dismiss(); onStock() }, ui.lp(top = 8))
+            r == "Giacenza sbagliata" -> {}
+            r == "Altro" -> list.addView(row("Altro · scrivo io", Icons.MORE) {
+                list.removeAllViews()
+                val e = EditText(this).apply {
+                    hint = "Scrivi il motivo"
+                    setSingleLine(); textSize = 16f
+                    imeOptions = EditorInfo.IME_ACTION_DONE
+                    background = ui.bg(C.CARD, 12, C.LINE2)
+                    setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+                }
+                list.addView(e, ui.lp(top = 8))
+                val ok = ui.primary("Aggiungi", C.GREEN, true, Icons.CHECK) {
+                    val txt = e.text.toString().trim()
+                    if (txt.length < 3) toast("Scrivi almeno 3 lettere") else { d.dismiss(); onPick(txt) }
+                }
+                list.addView(ok, ui.lp(top = 10, h = ui.dp(52)))
+                e.requestFocus()
+                d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+            }, ui.lp(top = 8))
+            else -> list.addView(row(r, Icons.CHECK) { d.dismiss(); onPick(r) }, ui.lp(top = 8))
+        }
+    }
+    box.addView(list)
+    box.addView(ui.button("Annulla", 0, C.INK, size = 15f) { d.dismiss() }, ui.lp(top = 12, h = ui.dp(48)))
+    val sc = android.widget.ScrollView(this).apply { addView(box) }
+    d.setContentView(sc)
+    d.window?.apply {
+        setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        setGravity(Gravity.BOTTOM)
+        setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        attributes = attributes.apply { y = ui.dp(8); horizontalMargin = 0f }
+        decorView.setPadding(ui.dp(8), 0, ui.dp(8), 0)
+    }
+    d.show()
 }
 
 /** A reason is needed when the system would not order it, or far fewer boxes (stock being corrected: no). */
@@ -327,12 +376,7 @@ private fun MainActivity.urgentBlock(body: LinearLayout, p: Pending, v: Verdict,
     box.addView(Stepper(ui, { p.boxes }, { p.boxes = it }, 1, 56, 36f, "Quanti colli?", onChange = upd, onDone = {}).view, ui.lp(top = 10))
     box.addView(note, ui.lp(top = 8))
     body.addView(box, ui.lp(top = 12))
-    body.addView(ui.caption("Perché è urgente?", C.ORANGE), ui.lp(top = 18))
-    val flow = FlowLayout(this, ui.dp(8), ui.dp(8))
-    for (r in URGENT_REASONS) flow.addView(ui.choice(r, p.reason == r, C.ORANGE) { p.reason = if (p.reason == r) null else r; showItem() })
-    body.addView(flow, ui.lp(top = 10))
-    if (p.reason == "Altro") body.addView(otherField(p), ui.lp(top = 10))
-    if (info != null && (info.stock ?: 0.0) <= 0 && p.reason == null) body.addView(ui.text("Lo scaffale è vuoto", 12f, C.RED_INK, ui.bold), ui.lp(top = 8))
+    if (info != null && (info.stock ?: 0.0) <= 0) body.addView(ui.text("Lo scaffale è vuoto", 12f, C.RED_INK, ui.bold), ui.lp(top = 8))
 }
 
 private fun MainActivity.notAvailableBlock(body: LinearLayout, p: Pending, v: Verdict, info: StoreInfo?) {
@@ -393,36 +437,55 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
         Kind.ORDER, Kind.SUBSTITUTE -> {
             val inIt = inList != null && inList.boxes > 0
             val need = needsWhy(p, info, adv)
-            val ready = !need || p.reasonText() != null
             val label = when {
                 inIt && inList!!.boxes == p.boxes && !need -> "Va bene così"
                 inIt -> "Cambia in ${p.boxes} ${colli(p.boxes)}"
                 v.kind == Kind.SUBSTITUTE -> "Ordina il sostituto · ${p.boxes}"
                 else -> "Aggiungi ${p.boxes} ${colli(p.boxes)}"
             }
-            if (need && !ready) c.addView(ui.text("Scegli il motivo qui sopra", 12f, C.AMBER_INK, ui.bold).apply { gravity = Gravity.CENTER }, ui.lp(bottom = 8))
-            else {
-                val hint = ui.row(Gravity.CENTER)
-                hint.addView(ui.icon(Icons.BARCODE, C.MUTED, 14, 2f))
-                hint.addView(ui.text("Riscansiona lo stesso articolo: +1 collo", 12f, C.MUTED), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 6))
-                c.addView(hint, ui.lp(bottom = 10))
-            }
+            val hint = ui.row(Gravity.CENTER)
+            hint.addView(ui.icon(Icons.BARCODE, C.MUTED, 14, 2f))
+            hint.addView(ui.text("Riscansiona lo stesso articolo: +1 collo", 12f, C.MUTED), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 6))
+            c.addView(hint, ui.lp(bottom = 10))
             pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Tolto dalla lista: ${name.take(36)}") }
                 else ui.button("Annulla", 0, C.INK, size = 15f) { done(null) },
-                ui.primary(label, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN, ready,
-                    if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS,
-                    whyDisabled = { toast("Scegli il motivo") }) { done(commit(p, target, name)) })
+                ui.primary(label, if (v.kind == Kind.SUBSTITUTE) C.BLUE else C.GREEN, true,
+                    if (inIt && inList!!.boxes == p.boxes) Icons.CHECK else Icons.PLUS) {
+                    // ask again only if the decision changed since the saved reason
+                    val saved = inList?.reason
+                    val askAgain = need && (saved.isNullOrEmpty() || !inIt || (adv.boxes ?: 0) > 0 && Feedbacks.overOrder(adv.boxes!!, p.boxes) && !Feedbacks.overOrder(adv.boxes, inList!!.boxes))
+                    if (!askAgain) { if (need && p.reason == null) p.reason = saved; done(commit(p, target, name)) }
+                    else {
+                        val b = adv.boxes ?: 0
+                        val why = if (b == 0) "Il sistema non lo ordinerebbe" else "Ne metti ${p.boxes}, il sistema ne consiglia $b"
+                        val sub = if (b == 0) adv.reason else "Scorta già sufficiente per il consigliato"
+                        askReason("Perché lo ordini?", why, sub, C.AMBER, C.AMBER_SOFT, C.AMBER_INK,
+                            Feedbacks.byUse(WHY_REASONS.dropLast(1), api.whyUse) + "Altro",
+                            onStock = { p.mode = 1; p.stockForWhy = true; showItem() }) { r ->
+                            p.reason = r; p.other = ""
+                            done(commit(p, target, name))
+                        }
+                    }
+                })
         }
         Kind.URGENT_ONLY -> {
             val inIt = inList != null && inList.boxes > 0 && inList.kind == "urgent"
-            val why = p.reasonText()
             pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Urgenza tolta") }
                 else ui.button("Non serve", 0, C.INK, size = 15f) { done(null) },
-                ui.primary(if (inIt) "Salva · ${p.boxes}" else "Ordina urgenza · ${p.boxes}", C.ORANGE, why != null, Icons.BOLT,
-                    whyDisabled = { toast("Scegli perché è urgente") }) {
+                ui.primary(if (inIt) "Salva · ${p.boxes}" else "Ordina urgenza · ${p.boxes}", C.ORANGE, true, Icons.BOLT) {
                     val it = v.item!!
-                    change(Line(it.ean, it.name.take(120), p.boxes, "urgent", reason = why!!.take(120), updatedBy = api.deviceName, updatedAt = System.currentTimeMillis()))
-                    done("Urgenza in lista: ${it.name.take(36)} · ${p.boxes}")
+                    fun save(why: String) {
+                        change(Line(it.ean, it.name.take(120), p.boxes, "urgent", reason = why.take(120), updatedBy = api.deviceName, updatedAt = System.currentTimeMillis()))
+                        done("Urgenza in lista: ${it.name.take(36)} · ${p.boxes}")
+                    }
+                    val saved = inList?.reason
+                    if (inIt && !saved.isNullOrEmpty()) save(saved)
+                    else {
+                        val d = it.direct
+                        askReason("Perché è urgente?", "Non è in Griglia",
+                            "Di norma si ordina dal fornitore diretto" + (if (d.isNotEmpty()) " $d" else "") + " · dal grossista solo come urgenza",
+                            C.ORANGE, C.ORANGE_SOFT, C.ORANGE, URGENT_REASONS, onStock = null) { r -> save(r) }
+                    }
                 })
         }
         Kind.NOT_AVAILABLE -> c.addView(ui.primary("OK · prossimo articolo", C.NAVY, true, Icons.CHECK) { done(commit(p, target, name)) })
