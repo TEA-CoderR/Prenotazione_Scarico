@@ -165,8 +165,9 @@ private fun MainActivity.heroBand(v: Verdict): View {
             "In Griglia · " + v.item!!.wholesalers.size + (if (v.item.wholesalers.size == 1) " grossista lo ha" else " grossisti lo hanno"))
         Kind.SUBSTITUTE -> Hero(C.BLUE, Color.WHITE, 0xFFDCE6FF.toInt(), Icons.SWAP, "SOSTITUITO", "Questo codice non c'è più · ordina il nuovo")
         Kind.NOT_AVAILABLE -> Hero(C.AMBER, 0xFF2B1A00.toInt(), 0xFF4A3300.toInt(), Icons.CLOCK, "NON DISPONIBILE", "In Griglia, ma questa settimana nessun grossista lo ha")
-        Kind.URGENT_ONLY -> Hero(C.ORANGE, Color.WHITE, 0xFFFFE2CC.toInt(), Icons.BOLT, "SOLO PER URGENZE",
-            (if (v.item!!.griglia == 2) "Tolto dalla Griglia" else "Non è in Griglia") + " · dal grossista solo se serve subito")
+        Kind.URGENT_ONLY -> Hero(C.ORANGE, Color.WHITE, 0xFFFFE2CC.toInt(), Icons.INFO,
+            if (v.item!!.griglia == 2) "TOLTO DALLA GRIGLIA" else "NON IN GRIGLIA",
+            "Si ordina dal fornitore diretto · dai grossisti DETERSIVI solo se urgente")
         Kind.DIRECT_ONLY -> Hero(C.RED, Color.WHITE, 0xFFFFD9D4.toInt(), Icons.BAN, "NON IN GRIGLIA", "Nessun grossista DETERSIVI lo ha")
         Kind.UNKNOWN -> Hero(0xFF475569.toInt(), Color.WHITE, 0xFFE2E8F0.toInt(), Icons.INFO, "SCONOSCIUTO", "Non è in Griglia né nei listini dei grossisti")
     }
@@ -365,8 +366,8 @@ private fun Pending.reasonText(): String? = when (reason) {
 
 private fun MainActivity.urgentBlock(body: LinearLayout, p: Pending, v: Verdict, info: StoreInfo?, pack: Double?) {
     val d = v.item!!.direct
-    body.addView(infoCard(Icons.BOLT, C.ORANGE, C.ORANGE_SOFT, "Solo se serve subito",
-        "Di norma dal fornitore diretto" + (if (d.isNotEmpty()) " $d" else "") + " · dal grossista solo come urgenza"), ui.lp(top = 16))
+    body.addView(infoCard(Icons.TRUCK, C.ORANGE, C.ORANGE_SOFT, "Ordinalo dal fornitore diretto" + (if (d.isNotEmpty()) " $d" else ""),
+        "Dai grossisti DETERSIVI solo in caso di urgenza"), ui.lp(top = 16))
     val box = ui.card(20)
     box.setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(16))
     box.addView(ui.caption("Colli urgenti"))
@@ -482,8 +483,8 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
                     if (inIt && !saved.isNullOrEmpty()) save(saved)
                     else {
                         val d = it.direct
-                        askReason("Perché è urgente?", "Non è in Griglia",
-                            "Di norma si ordina dal fornitore diretto" + (if (d.isNotEmpty()) " $d" else "") + " · dal grossista solo come urgenza",
+                        askReason("Perché è urgente?", if (it.griglia == 2) "Tolto dalla Griglia" else "Non è in Griglia",
+                            "Si ordina dal fornitore diretto" + (if (d.isNotEmpty()) " $d" else "") + " · dai grossisti DETERSIVI solo se urgente",
                             C.ORANGE, C.ORANGE_SOFT, C.ORANGE, URGENT_REASONS, onStock = null) { r -> save(r) }
                     }
                 })
