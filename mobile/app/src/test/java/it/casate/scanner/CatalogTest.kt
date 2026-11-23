@@ -101,4 +101,23 @@ class CatalogTest {
         assertFalse(AppUpdate.isNewer(u, 42))
         assertFalse(AppUpdate.isNewer(null, 1))
     }
+
+    @Test
+    fun scannerTypingIsTreatedAsScanPersonIsNot() {
+        var t = 0L
+        val k = KeyScan { t }
+        // scanner: 13 digits a few ms apart, then ENTER
+        for (c in "8001280307621") { k.add(c); t += 4 }
+        assertEquals("8001280307621", k.finish())
+        // a person: 300 ms between keys → each pause starts over, never a scan
+        for (c in "123456") { t += 300; k.add(c) }
+        assertNull(k.finish())
+        // too short
+        for (c in "1234") { k.add(c); t += 3 }
+        assertNull(k.finish())
+        // search box: whole code in one burst
+        assertTrue(KeyScan.looksScanned("8001280307621", 60))
+        assertFalse(KeyScan.looksScanned("8001280307621", 4000))
+        assertFalse(KeyScan.looksScanned("DIXAN", 10))
+    }
 }

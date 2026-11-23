@@ -17,6 +17,14 @@ class Api(private val ctx: Context) {
         // the first builds had a wrong default (casa-te.top): a saved old address is corrected on read
         get() = (prefs.getString("url", DEFAULT_URL) ?: DEFAULT_URL).replace("casa-te.top", "casaete.top")
         set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
+    /** DataWedge confirmed our scanner profile for this app version (else it is written again). */
+    var dwOk: Boolean
+        get() = prefs.getInt("dwOkVersion", -1) == appVersion
+        set(v) = prefs.edit().putInt("dwOkVersion", if (v) appVersion else -1).apply()
+    private val appVersion: Int = runCatching {
+        @Suppress("DEPRECATION") ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
+    }.getOrDefault(0)
+
     var token: String?
         get() = prefs.getString("token", null)
         set(v) = prefs.edit().putString("token", v).apply()

@@ -254,11 +254,18 @@ internal fun MainActivity.scanTab(): View {
         }
         enter
     }
+    var burst = 0L
     input.addTextChangedListener(object : android.text.TextWatcher {
         override fun afterTextChanged(e: android.text.Editable?) {
             run?.let { main.removeCallbacks(it) }
             val q = e?.toString().orEmpty()
-            run = Runnable { searchNow(q) }.also { main.postDelayed(it, 220) }
+            val now = System.currentTimeMillis()
+            if (q.length <= 1) burst = now
+            // the scanner typed a whole code in a burst (keystroke mode, no ENTER): treat it as a scan
+            run = if (KeyScan.looksScanned(q.trim(), now - burst)) Runnable {
+                if (input.text.toString() == q) { input.setText(""); search = ""; hideKeyboard(input); onScan(q.trim()) }
+            }.also { main.postDelayed(it, 150) }
+            else Runnable { searchNow(q) }.also { main.postDelayed(it, 220) }
         }
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}

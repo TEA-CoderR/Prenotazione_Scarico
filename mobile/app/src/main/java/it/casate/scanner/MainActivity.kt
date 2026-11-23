@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
@@ -71,8 +72,65 @@ class MainActivity : Activity() {
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val data = intent.getStringExtra("com.symbol.datawedge.data_string") ?: return
-            onScan(data)
+            scanVia = "intent"; scansIntent++
+            onScan(data.trim())
         }
+    }
+
+    // ---- scanner (DataWedge) state, shown in the menu «Stato dello scanner»
+    private var dwResult: String? = null
+    private var dwActive: String? = null
+    private var dwTries = 0
+    private var scanVia = ""
+    private var scansIntent = 0
+    private var scansKeys = 0
+    private val keyScan = KeyScan()
+    private val keyFlush = Runnable { keyScan.finish()?.let { scannedByKeys(it) } }
+
+    private val dwReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val (res, active) = DataWedge.readResult(intent)
+            if (res != null) {
+                dwResult = res
+                api.dwOk = res == "SUCCESS"
+                if (res == "SUCCESS") main.postDelayed({ DataWedge.askActiveProfile(this@MainActivity) }, 800)
+            }
+            if (active != null) {
+                dwActive = active
+                // the app is in front but another profile is active: write ours again (a few times at most)
+                if (active != DataWedge.PROFILE && dwTries < 3) { dwTries++; DataWedge.configure(this@MainActivity) }
+            }
+        }
+    }
+
+    private fun scannedByKeys(code: String) {
+        scanVia = "tastiera"; scansKeys++
+        if (dwTries < 3) { dwTries++; DataWedge.configure(this) }
+        onScan(code)
+    }
+
+    /** Scanner in keystroke mode (default Profile0): catch the typed code even when no field has focus. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (currentFocus !is android.widget.EditText) {
+            val code = event.keyCode
+            if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER || code == KeyEvent.KEYCODE_TAB) {
+                if (keyScan.pending()) {
+                    if (event.action == KeyEvent.ACTION_UP) { main.removeCallbacks(keyFlush); keyFlush.run() }
+                    return true
+                }
+            } else {
+                val ch = event.unicodeChar.toChar()
+                if (event.unicodeChar != 0 && (ch.isLetterOrDigit() || ch == '-') && !event.isCtrlPressed) {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        keyScan.add(ch)
+                        main.removeCallbacks(keyFlush)
+                        main.postDelayed(keyFlush, KeyScan.GAP_MS + 30)
+                    }
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private val tick = object : Runnable {
@@ -90,7 +148,6 @@ class MainActivity : Activity() {
         ui.images = Images(this)
         list = api.loadList()
         tones = runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90) }.getOrNull()
-        DataWedge.configure(this)
         root = FrameLayout(this)
         page = FrameLayout(this)
         root.addView(page, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -141,6 +198,10 @@ class MainActivity : Activity() {
         super.onResume()
         val filter = IntentFilter(DataWedge.ACTION)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED) else registerReceiver(receiver, filter)
+        val rf = IntentFilter(DataWedge.RESULT_ACTION).apply { addCategory(Intent.CATEGORY_DEFAULT) }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(dwReceiver, rf, Context.RECEIVER_EXPORTED) else registerReceiver(dwReceiver, rf)
+        // not confirmed yet (or written by an older version): write the profile again; otherwise just check it
+        if (!api.dwOk) DataWedge.configure(this) else main.postDelayed({ DataWedge.askActiveProfile(this) }, 800)
         if (api.paired) {
             if (catalog == null || System.currentTimeMillis() - api.lastCheck > 30 * 60_000) refreshCatalog(false)
             sync(quiet = true)
@@ -153,6 +214,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         runCatching { unregisterReceiver(receiver) }
+        runCatching { unregisterReceiver(dwReceiver) }
         main.removeCallbacks(tick)
     }
 
@@ -441,17 +503,37 @@ class MainActivity : Activity() {
     }
 
     internal fun menu() {
-        val items = arrayOf("Aggiorna catalogo e lista", "Controlla aggiornamenti dell'app", "Scollega questo scanner")
+        val items = arrayOf("Aggiorna catalogo e lista", "Controlla aggiornamenti dell'app", "Stato dello scanner", "Scollega questo scanner")
         AlertDialog.Builder(this).setTitle(api.deviceName.ifEmpty { "Scanner" } + " · app " + Updater.installedName(this)).setItems(items) { _, w ->
             when (w) {
                 0 -> { refreshCatalog(true); sync(false) }
                 1 -> checkUpdate(true)
-                2 -> AlertDialog.Builder(this).setTitle("Scollegare lo scanner?")
+                2 -> scannerStatus()
+                3 -> AlertDialog.Builder(this).setTitle("Scollegare lo scanner?")
                     .setMessage("Servirà un nuovo codice dall'ufficio acquisti." +
                         (if (list.pending.isNotEmpty()) "\n${list.pending.size} modifiche non ancora inviate andranno perse." else ""))
                     .setPositiveButton("Scollega") { _, _ -> unpaired() }.setNegativeButton("Annulla", null).show()
             }
         }.show()
+    }
+
+    /** What DataWedge says and how the last scans arrived: tells a device problem from an app problem. */
+    private fun scannerStatus() {
+        val ok = dwActive == DataWedge.PROFILE
+        val msg = buildString {
+            append(if (ok) "✓ Il tasto giallo funziona in tutta l'app." else if (dwActive == null && dwResult == null)
+                "DataWedge non risponde: lo scanner potrebbe non essere uno Zebra o DataWedge è disattivato." else
+                "⚠ Lo scanner usa il profilo «${dwActive ?: "?"}»: i codici arrivano come tastiera. L'app li legge lo stesso, ma è meglio ripristinare.")
+            append("\n\nProfilo attivo: ").append(dwActive ?: "—")
+            append("\nImpostazione: ").append(dwResult ?: "nessuna risposta")
+            append("\nLetture: ").append(scansIntent).append(" dirette · ").append(scansKeys).append(" da tastiera")
+        }
+        AlertDialog.Builder(this).setTitle("Stato dello scanner").setMessage(msg)
+            .setPositiveButton("Ripristina lo scanner") { _, _ ->
+                dwTries = 0; dwResult = null; dwActive = null; api.dwOk = false
+                DataWedge.configure(this)
+                main.postDelayed({ scannerStatus() }, 2500)
+            }.setNegativeButton("Chiudi", null).show()
     }
 
     // ================================================================== app update
