@@ -7,6 +7,7 @@ import { BookingError } from "@/lib/booking/errors";
 import {
   catalogFor,
   createDevice,
+  deleteDevice,
   deviceFor,
   latestCatalog,
   latestCatalogInfo,
@@ -16,6 +17,7 @@ import {
   putCatalogPart,
   renewCode,
   setActive,
+  updateDevice,
 } from "@/lib/scanner";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -71,6 +73,22 @@ describe.skipIf(!url)("store scanners (PostgreSQL)", () => {
     // Deactivated: key and code stop working.
     await setActive(db, device.id, false);
     expect(await deviceFor(db, t2)).toBeNull();
+  });
+
+  it("renames / moves a device and deletes it only once deactivated", async () => {
+    const { device, pairCode } = await createDevice(db, { name: "TC22 Foiano", entityCode: 1 }, NOW);
+    const { token } = await pair(db, pairCode, NOW);
+    const d = await updateDevice(db, device.id, { name: "TC22 Marlia 1", entityCode: 2 });
+    expect(d).toMatchObject({ name: "TC22 Marlia 1", entityCode: 2, paired: true, active: true });
+    expect(await deviceFor(db, token, NOW)).not.toBeNull();
+    await expectCode(updateDevice(db, device.id, { name: "  " }), "VALIDATION");
+    await expectCode(updateDevice(db, 999, { name: "x" }), "NOT_FOUND");
+
+    await expectCode(deleteDevice(db, device.id), "CONFLICT");
+    await setActive(db, device.id, false);
+    expect(await deleteDevice(db, device.id)).toEqual({ deleted: device.id });
+    expect(await listDevices(db)).toEqual([]);
+    await expectCode(deleteDevice(db, device.id), "NOT_FOUND");
   });
 
   it("expired codes do not pair", async () => {
