@@ -96,6 +96,28 @@ export async function setActive(db: Db, id: number, active: boolean) {
   return toRow(d);
 }
 
+/** Rename a device and/or move it to another store (the pairing stays valid). */
+export async function updateDevice(db: Db, id: number, raw: { name?: string; entityCode?: number | null }) {
+  const parsed = deviceSchema.partial().safeParse(raw);
+  if (!parsed.success) throw new BookingError("VALIDATION", z.prettifyError(parsed.error));
+  const set: Partial<typeof scannerDevice.$inferInsert> = {};
+  if (parsed.data.name !== undefined) set.name = parsed.data.name;
+  if (parsed.data.entityCode !== undefined) set.entityCode = parsed.data.entityCode;
+  if (!Object.keys(set).length) throw new BookingError("VALIDATION", "Nothing to change");
+  const [d] = await db.update(scannerDevice).set(set).where(eq(scannerDevice.id, id)).returning();
+  if (!d) throw new BookingError("NOT_FOUND", "Unknown scanner");
+  return toRow(d);
+}
+
+/** Remove a device for good. Only deactivated ones, so a scanner in use is never cut off by mistake. */
+export async function deleteDevice(db: Db, id: number) {
+  const [d] = await db.select().from(scannerDevice).where(eq(scannerDevice.id, id));
+  if (!d) throw new BookingError("NOT_FOUND", "Unknown scanner");
+  if (d.isActive) throw new BookingError("CONFLICT", "Deactivate the scanner before deleting it");
+  await db.delete(scannerDevice).where(and(eq(scannerDevice.id, id), eq(scannerDevice.isActive, false)));
+  return { deleted: id };
+}
+
 /** Device side: exchange the pairing code for the device key (the code works once). */
 export async function pair(db: Db, code: string, now = new Date()) {
   const c = normCode(code);
