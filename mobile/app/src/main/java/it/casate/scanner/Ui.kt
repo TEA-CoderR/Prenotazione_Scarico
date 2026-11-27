@@ -191,7 +191,7 @@ class Ui(private val a: Activity) {
      * The product photo (from the image server), with the item's first letters until it arrives or when
      * there is none. Tap = bigger photo.
      */
-    fun photo(ean: String, name: String, size: Int = 64, fg: Int = C.BLUE, fill: Int = C.CARD, faded: Boolean = false): View {
+    fun photo(ean: String, name: String, size: Int = 64, fg: Int = C.BLUE, fill: Int = C.CARD, faded: Boolean = false, zoomable: Boolean = true): View {
         val f = FrameLayout(a)
         f.background = bg(fill, if (size >= 56) 14 else 10, if (fill == C.CARD) C.LINE else 0)
         f.outlineProvider = ViewOutlineProvider.BACKGROUND
@@ -214,7 +214,7 @@ class Ui(private val a: Activity) {
         if (im != null && ean.isNotEmpty()) {
             im.into(img, ean, dp(size)) { ok ->
                 img.visibility = if (ok) View.VISIBLE else View.GONE
-                if (ok) {
+                if (ok && zoomable) {
                     f.isClickable = true
                     f.contentDescription = "Foto di $name"
                     f.setOnClickListener { zoom(ean, name) }

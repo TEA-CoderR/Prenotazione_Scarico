@@ -21,6 +21,7 @@ private var beam: ValueAnimator? = null
  */
 internal fun MainActivity.scanTab(): View {
     beam?.cancel()
+    searchExit = null
     val root = ui.col()
     root.setBackgroundColor(C.CANVAS)
     val head = ui.col()
@@ -205,8 +206,10 @@ internal fun MainActivity.scanTab(): View {
     }
     sr.addView(input, ui.lp(w = 0, h = ui.dp(46), weight = 1f))
     val clear = ui.icon(Icons.CLOSE, C.FAINT, 34, 2f).apply { setPadding(ui.dp(9), ui.dp(9), ui.dp(9), ui.dp(9)); contentDescription = "Cancella" }
-    ui.tap(clear, 999) { input.setText(""); hideKeyboard(input) }
+    clear.visibility = if (search.isEmpty()) View.GONE else View.VISIBLE
     sr.addView(clear, ui.fixed(34, 34))
+    val go = ui.button("Cerca", C.BLUE, size = 14f) {}.apply { setPadding(ui.dp(14), 0, ui.dp(14), 0) }
+    sr.addView(go, ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, h = ui.dp(38), start = 4))
 
     // the last lines put in the list
     val lastBox = ui.col()
@@ -244,28 +247,43 @@ internal fun MainActivity.scanTab(): View {
     body.addView(results)
     body.addView(lastBox)
 
+    val bar = ui.col()
+    // «search» mode: while the field is in use the navy header and the bottom button go away, so the
+    // results get the whole screen above the keyboard and nobody taps «Rivedi e invia lista» by mistake.
+    fun mode(on: Boolean) {
+        head.visibility = if (on) View.GONE else View.VISIBLE
+        bar.visibility = if (on) View.GONE else View.VISIBLE
+        searchExit = if (on) ({ input.setText(""); input.clearFocus(); hideKeyboard(input); mode(false) }) else null
+    }
     fun searchNow(q: String) {
         search = q
         results.removeAllViews()
         val t = q.trim()
         val cat = catalog
         val searching = t.length >= 2
+        clear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
         rest.visibility = if (searching) View.GONE else View.VISIBLE
         lastBox.visibility = if (searching) View.GONE else View.VISIBLE
-        if (cat == null || !searching || (t.all { it.isDigit() } && t.length < 4)) return
-        val found = cat.search(t, 25)
+        if (searching || input.hasFocus()) mode(true)
+        if (cat == null || !searching) return
+        if (t.all { it.isDigit() } && t.length < 4) {
+            results.addView(ui.text("Scrivi almeno 4 cifre del codice", 13f, C.MUTED), ui.lp(top = 12))
+            return
+        }
+        val found = cat.search(t, 40)
+        val head2 = ui.row()
+        head2.addView(ui.text(when (found.size) { 0 -> "Nessun articolo"; 1 -> "1 articolo"; 40 -> "Primi 40 articoli · scrivi di più"; else -> "${found.size} articoli" },
+            12f, C.MUTED, ui.bold), ui.lp(w = 0, weight = 1f))
+        results.addView(head2, ui.lp(top = 12))
         val c = ui.col()
         c.background = ui.bg(C.CARD, 14, C.LINE)
-        c.setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4))
-        if (found.isEmpty()) c.addView(ui.text("Nessun articolo trovato", 13f, C.MUTED).apply { setPadding(ui.dp(4), ui.dp(12), 0, ui.dp(12)) })
+        c.setPadding(ui.dp(10), ui.dp(2), ui.dp(6), ui.dp(2))
+        if (found.isEmpty()) c.addView(ui.text("Prova con un'altra parola o con il codice a barre", 13f, C.MUTED).apply { setPadding(ui.dp(4), ui.dp(14), 0, ui.dp(14)) })
         for ((i, it) in found.withIndex()) {
-            if (i > 0) c.addView(ui.divider())
-            val k = Catalog.judgeItem(it).kind
-            c.addView(ui.listRow(ui.photo(it.ean, it.name, 40, kindColor(k)), it.name, it.ean, C.MUTED, ui.dot(kindColor(k), 8)) {
-                hideKeyboard(input); openItem(it.ean)
-            })
+            if (i > 0) c.addView(ui.divider(60))
+            c.addView(searchRow(it) { hideKeyboard(input); openItem(it.ean) })
         }
-        results.addView(c, ui.lp(top = 8))
+        results.addView(c, ui.lp(top = 6))
     }
     var run: Runnable? = null
     input.setOnEditorActionListener { tv, actionId, event ->
@@ -273,10 +291,17 @@ internal fun MainActivity.scanTab(): View {
             (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
         if (enter) {
             val s = tv.text.toString().trim()
-            if (s.length >= 6 && s.all { it.isDigit() }) { tv.text = ""; search = ""; hideKeyboard(tv); onScan(s) } else searchNow(s)
+            if (s.length >= 6 && s.all { it.isDigit() }) { tv.text = ""; search = ""; hideKeyboard(tv); onScan(s) } else { searchNow(s); hideKeyboard(tv) }
         }
         enter
     }
+    go.setOnClickListener {
+        val s = input.text.toString().trim()
+        if (s.length >= 6 && s.all { it.isDigit() }) { input.setText(""); search = ""; hideKeyboard(input); onScan(s) }
+        else { searchNow(s); if (s.length >= 2) hideKeyboard(input) else input.requestFocus() }
+    }
+    ui.tap(clear, 999) { input.setText(""); input.requestFocus() }
+    input.setOnFocusChangeListener { _, has -> if (has) mode(true) else if (input.text.isNullOrBlank()) mode(false) }
     var burst = 0L
     input.addTextChangedListener(object : android.text.TextWatcher {
         override fun afterTextChanged(e: android.text.Editable?) {
@@ -296,7 +321,6 @@ internal fun MainActivity.scanTab(): View {
     if (search.isNotEmpty()) searchNow(search)
     root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, ui.lp(h = 0, weight = 1f))
 
-    val bar = ui.col()
     bar.setBackgroundColor(C.CARD)
     bar.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
     val sent = list.submitted && !list.changedSinceSubmit
@@ -310,4 +334,35 @@ internal fun MainActivity.scanTab(): View {
         }
     }
     return root
+}
+
+/** What a search result is, in the words of the item card. */
+private fun searchLabel(item: Item, k: Kind): String = when (k) {
+    Kind.ORDER -> "Ordinabile"
+    Kind.SUBSTITUTE -> "Sostituito" + (item.substituteName.takeIf { it.isNotEmpty() }?.let { " da $it" } ?: "")
+    Kind.NOT_AVAILABLE -> "Non disponibile questa settimana"
+    Kind.URGENT_ONLY -> "Non in Griglia · solo urgenze"
+    Kind.DIRECT_ONLY -> if (item.griglia == 2) "Tolto dalla Griglia" else "Non in Griglia"
+    Kind.UNKNOWN -> "Sconosciuto"
+}
+
+/** One search result: photo (tap = open, not zoom) · full name on two lines · what it is · barcode. */
+private fun MainActivity.searchRow(item: Item, onClick: () -> Unit): View {
+    val k = Catalog.judgeItem(item).kind
+    val fg = kindColor(k)
+    val r = ui.row()
+    r.setPadding(ui.dp(2), ui.dp(10), ui.dp(2), ui.dp(10))
+    r.minimumHeight = ui.dp(68)
+    r.addView(ui.photo(item.ean, item.name, 48, fg, zoomable = false))
+    val c = ui.col()
+    c.addView(ui.text(item.name.ifEmpty { item.ean }, 15f, C.INK, ui.medium).lines(2))
+    val sub = ui.row()
+    sub.addView(ui.dot(fg, 7), LinearLayout.LayoutParams(ui.dp(7), ui.dp(7)).apply { marginEnd = ui.dp(6) })
+    sub.addView(ui.text(searchLabel(item, k), 12f, fg, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f))
+    c.addView(sub, ui.lp(top = 4))
+    c.addView(ui.num(item.ean, 11f, C.FAINT), ui.lp(top = 2))
+    r.addView(c, ui.lp(w = 0, weight = 1f, start = 12))
+    r.addView(ui.icon(Icons.NEXT, C.FAINT, 18, 2.2f), LinearLayout.LayoutParams(ui.dp(18), ui.dp(18)).apply { marginStart = ui.dp(6) })
+    ui.tap(r, 12) { onClick() }
+    return r
 }
