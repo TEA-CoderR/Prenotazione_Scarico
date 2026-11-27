@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- the app updates itself (Updater.kt): download the new APK and hand it to the system installer -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Honeywell: needed to claim the scanner and get each scan as an intent (Scanners.kt); ignored elsewhere -->
+    <uses-permission android:name="com.honeywell.decode.permission.DECODE" />
+
+    <queries>
+        <package android:name="com.symbol.datawedge" />
+        <package android:name="com.intermec.datacollectionservice" />
+    </queries>
 
     <application
         android:allowBackup="false"

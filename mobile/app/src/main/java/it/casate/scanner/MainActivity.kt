@@ -71,7 +71,7 @@ class MainActivity : Activity() {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            val data = intent.getStringExtra("com.symbol.datawedge.data_string") ?: return
+            val data = Scanners.extract(intent) ?: return      // Zebra, Honeywell, Urovo, Newland… (Scanners.kt)
             scanVia = "intent"; scansIntent++
             onScan(data.trim())
         }
@@ -105,13 +105,73 @@ class MainActivity : Activity() {
 
     private fun scannedByKeys(code: String) {
         scanVia = "tastiera"; scansKeys++
-        if (dwTries < 3) { dwTries++; DataWedge.configure(this) }
+        if (dwTries < 3 && Scanners.isZebra) { dwTries++; DataWedge.configure(this) }
         onScan(code)
+    }
+
+    // ---- invisible scan field: scanners that write the code straight into the focused text field
+    // (Honeywell / Urovo «keyboard wedge»: no key events) used to need a tap on the search box first.
+    // This field keeps the focus when no other field has it, so the code lands here and is read as a scan.
+    private lateinit var sink: android.widget.EditText
+    private var sinkFirst = 0L
+    private var sinkBusy = false
+    private var scansField = 0
+    private val sinkFlush = Runnable { flushSink() }
+
+    private fun makeSink() {
+        sink = android.widget.EditText(this).apply {
+            alpha = 0f
+            isCursorVisible = false
+            showSoftInputOnFocus = false
+            isSingleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+            setOnEditorActionListener { _, _, _ -> main.removeCallbacks(sinkFlush); flushSink(); true }
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    if (sinkBusy || e.isNullOrEmpty()) return
+                    if (sinkFirst == 0L) sinkFirst = System.currentTimeMillis()
+                    if (e.contains('\n')) { main.removeCallbacks(sinkFlush); flushSink(); return }
+                    main.removeCallbacks(sinkFlush)
+                    main.postDelayed(sinkFlush, KeyScan.GAP_MS + 30)
+                }
+            })
+        }
+        root.addView(sink, FrameLayout.LayoutParams(2, 2))
+    }
+
+    private fun flushSink() {
+        val raw = sink.text?.toString() ?: ""
+        val ms = System.currentTimeMillis() - sinkFirst
+        sinkBusy = true
+        sink.setText("")
+        sinkBusy = false
+        sinkFirst = 0L
+        val code = Scanners.clean(raw)
+        if (code.length >= KeyScan.MIN_LEN && ms <= code.length * KeyScan.PER_CHAR_MS + 300) {
+            scanVia = "campo"; scansField++
+            onScan(code)
+        }
+    }
+
+    /** The invisible field takes the focus when no other field has it (never on pairing / full screens). */
+    internal fun focusSink() {
+        if (!::sink.isInitialized || !api.paired || fullScreen) return
+        val f = currentFocus
+        if (f === sink || (f is android.widget.EditText && f.isShown)) return
+        sink.requestFocus()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) main.post { focusSink() }
     }
 
     /** Scanner in keystroke mode (default Profile0): catch the typed code even when no field has focus. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (currentFocus !is android.widget.EditText) {
+        if (currentFocus !is android.widget.EditText || (::sink.isInitialized && currentFocus === sink)) {
             val code = event.keyCode
             if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER || code == KeyEvent.KEYCODE_TAB) {
                 if (keyScan.pending()) {
@@ -153,6 +213,7 @@ class MainActivity : Activity() {
         root.addView(page, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         sheet = SheetHost(this)
         root.addView(sheet.layer, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        makeSink()
         setContentView(root)
         window.navigationBarColor = Color.WHITE
         if (api.paired) {
@@ -196,12 +257,16 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        val filter = IntentFilter(DataWedge.ACTION)
+        val filter = Scanners.filter()
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED) else registerReceiver(receiver, filter)
+        Scanners.claim(this)
         val rf = IntentFilter(DataWedge.RESULT_ACTION).apply { addCategory(Intent.CATEGORY_DEFAULT) }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(dwReceiver, rf, Context.RECEIVER_EXPORTED) else registerReceiver(dwReceiver, rf)
         // not confirmed yet (or written by an older version): write the profile again; otherwise just check it
-        if (!api.dwOk) DataWedge.configure(this) else main.postDelayed({ DataWedge.askActiveProfile(this) }, 800)
+        if (Scanners.isZebra || !Scanners.isHoneywell) {
+            if (!api.dwOk) DataWedge.configure(this) else main.postDelayed({ DataWedge.askActiveProfile(this) }, 800)
+        }
+        main.post { focusSink() }
         if (api.paired) {
             if (catalog == null || System.currentTimeMillis() - api.lastCheck > 30 * 60_000) refreshCatalog(false)
             sync(quiet = true)
@@ -215,6 +280,7 @@ class MainActivity : Activity() {
         super.onPause()
         runCatching { unregisterReceiver(receiver) }
         runCatching { unregisterReceiver(dwReceiver) }
+        Scanners.release(this)
         main.removeCallbacks(tick)
     }
 
@@ -259,6 +325,7 @@ class MainActivity : Activity() {
         page.addView(col)
         afterRender?.invoke()
         afterRender = null
+        main.post { focusSink() }
     }
 
     internal var afterRender: (() -> Unit)? = null
@@ -521,17 +588,29 @@ class MainActivity : Activity() {
     private fun scannerStatus() {
         val ok = dwActive == DataWedge.PROFILE
         val msg = buildString {
-            append(if (ok) "✓ Il tasto giallo funziona in tutta l'app." else if (dwActive == null && dwResult == null)
+            if (!Scanners.isZebra) {
+                append(if (Scanners.isHoneywell) "Scanner Honeywell: l'app chiede le letture direttamente al lettore." else
+                    "Scanner ${Scanners.brand.ifBlank { "non Zebra" }}: l'app ascolta i lettori più diffusi " +
+                        "(Honeywell, Urovo, Newland, iData, Sunmi, Chainway, Seuic, Datalogic) e i codici scritti come tastiera.")
+                append("\nSe il codice non arriva: nelle impostazioni dello scanner scegli l'uscita «Intent / Broadcast» " +
+                    "oppure «Tastiera», senza toccare la casella di ricerca.")
+            } else append(if (ok) "✓ Il tasto giallo funziona in tutta l'app." else if (dwActive == null && dwResult == null)
                 "DataWedge non risponde: lo scanner potrebbe non essere uno Zebra o DataWedge è disattivato." else
                 "⚠ Lo scanner usa il profilo «${dwActive ?: "?"}»: i codici arrivano come tastiera. L'app li legge lo stesso, ma è meglio ripristinare.")
-            append("\n\nProfilo attivo: ").append(dwActive ?: "—")
-            append("\nImpostazione: ").append(dwResult ?: "nessuna risposta")
-            append("\nLetture: ").append(scansIntent).append(" dirette · ").append(scansKeys).append(" da tastiera")
+            append("\n\nModello: ").append(Build.MANUFACTURER ?: "").append(" ").append(Build.MODEL ?: "")
+            if (Scanners.isZebra) {
+                append("\nProfilo attivo: ").append(dwActive ?: "—")
+                append("\nImpostazione: ").append(dwResult ?: "nessuna risposta")
+            }
+            append("\nLetture: ").append(scansIntent).append(" dirette · ").append(scansKeys).append(" da tastiera · ")
+                .append(scansField).append(" scritte nel campo")
         }
         AlertDialog.Builder(this).setTitle("Stato dello scanner").setMessage(msg)
             .setPositiveButton("Ripristina lo scanner") { _, _ ->
                 dwTries = 0; dwResult = null; dwActive = null; api.dwOk = false
-                DataWedge.configure(this)
+                if (Scanners.isHoneywell) { Scanners.release(this); main.postDelayed({ Scanners.claim(this) }, 500) }
+                else DataWedge.configure(this)
+                focusSink()
                 main.postDelayed({ scannerStatus() }, 2500)
             }.setNegativeButton("Chiudi", null).show()
     }
