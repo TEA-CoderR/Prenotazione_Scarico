@@ -147,6 +147,11 @@ class Api(private val ctx: Context) {
         get() = prefs.getString("to_count", "") ?: ""
         set(v) = prefs.edit().putString("to_count", v).apply()
 
+    /** Id of the newest «Novità e guida» this scanner has seen (Guide.RELEASES). */
+    var guideSeen: String
+        get() = prefs.getString("guide_seen", "") ?: ""
+        set(v) = prefs.edit().putString("guide_seen", v).apply()
+
     /** Sections folded on the list page (comma-separated Sections.Kind names; "-" = none). */
     var listFolded: String
         get() = prefs.getString("list_folded", "") ?: ""
@@ -349,7 +354,8 @@ class Api(private val ctx: Context) {
                 VolantinoInfo(it.optString("name"), it.optString("start"), it.optString("end"), it.optInt("days"), it.optInt("items"))
             }
             return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info, o.optString("imageUrl"),
-                horizon = adv?.optInt("horizon", 14) ?: 14, dataDate = adv?.optString("dataDate", "") ?: "", volantino = vol)
+                horizon = adv?.optInt("horizon", 14) ?: 14, dataDate = adv?.optString("dataDate", "") ?: "", volantino = vol,
+                phrases = o.optJSONArray("phrases")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } }.orEmpty())
         }
     }
 }

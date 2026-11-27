@@ -330,6 +330,7 @@ class MainActivity : Activity() {
     internal fun render() {
         if (!api.paired) return
         fullScreen = false
+        Guide.open = false
         countBack = null
         val col = ui.col()
         col.setBackgroundColor(C.CANVAS)
@@ -347,6 +348,7 @@ class MainActivity : Activity() {
         afterRender?.invoke()
         afterRender = null
         main.post { focusSink() }
+        if (api.guideSeen != Guide.latest.id) main.postDelayed({ if (!fullScreen && !sheet.isOpen && tab == Tab.SCAN) maybeShowGuide() }, 600)
     }
 
     internal var afterRender: (() -> Unit)? = null
@@ -354,6 +356,7 @@ class MainActivity : Activity() {
     /** Full-screen page without tabs (pairing, counting). */
     internal fun showFull(v: View, dark: Boolean) {
         fullScreen = true
+        Guide.open = false
         statusBar(dark)
         page.removeAllViews()
         page.addView(v)
@@ -415,6 +418,7 @@ class MainActivity : Activity() {
 
     // ================================================================== scanning
     internal fun onScan(raw: String) {
+        if (fullScreen && Guide.open) { api.guideSeen = Guide.latest.id; render() }
         if (fullScreen) return
         val cat = catalog
         if (cat == null) {
@@ -592,13 +596,14 @@ class MainActivity : Activity() {
     }
 
     internal fun menu() {
-        val items = arrayOf("Aggiorna catalogo e lista", "Controlla aggiornamenti dell'app", "Stato dello scanner", "Scollega questo scanner")
+        val items = arrayOf("Aggiorna catalogo e lista", "Controlla aggiornamenti dell'app", "Novità e guida", "Stato dello scanner", "Scollega questo scanner")
         AlertDialog.Builder(this).setTitle(api.deviceName.ifEmpty { "Scanner" } + " · app " + Updater.installedName(this)).setItems(items) { _, w ->
             when (w) {
                 0 -> { refreshCatalog(true); sync(false) }
                 1 -> checkUpdate(true)
-                2 -> scannerStatus()
-                3 -> AlertDialog.Builder(this).setTitle("Scollegare lo scanner?")
+                2 -> showGuide(Guide.latest)
+                3 -> scannerStatus()
+                4 -> AlertDialog.Builder(this).setTitle("Scollegare lo scanner?")
                     .setMessage("Servirà un nuovo codice dall'ufficio acquisti." +
                         (if (list.pending.isNotEmpty()) "\n${list.pending.size} modifiche non ancora inviate andranno perse." else ""))
                     .setPositiveButton("Scollega") { _, _ -> unpaired() }.setNegativeButton("Annulla", null).show()

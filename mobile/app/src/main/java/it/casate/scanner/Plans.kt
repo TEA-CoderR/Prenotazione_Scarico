@@ -11,10 +11,11 @@ import kotlin.math.ceil
  */
 
 object Phrases {
-    /** Shown when this scanner has not written anything often yet. */
-    val DEFAULTS = listOf("I clienti lo chiedono", "Finito sullo scaffale", "Sostituisce un articolo finito",
-        "Novità del fornitore", "È in volantino")
-    const val SHOWN = 5
+    /** Shown when nothing better is known yet: what the stores ask about the items they cannot order. */
+    val DEFAULTS = listOf("C'è un articolo che lo sostituisce?", "Lo chiedono i clienti, ne vendevamo tanti",
+        "Scaffale vuoto da più di una settimana", "Stesso prodotto con codice nuovo",
+        "Si può ordinare da un altro fornitore?")
+    const val SHOWN = 6
     private val SPLIT = Regex("[.;!?\\n]+|,\\s+")
 
     /** The sentences of a message worth remembering (3–60 characters). */
@@ -34,11 +35,14 @@ object Phrases {
         return out.entries.sortedByDescending { it.value }.take(60).associate { it.key to it.value }
     }
 
-    /** What to show: the sentences written at least twice (most used first), then the defaults. */
-    fun shown(stored: Map<String, Int>): List<String> {
+    /**
+     * What to show: what this scanner wrote at least twice (most used first), then what all the stores write most
+     * to the office (`common`, published with the catalog), then the defaults.
+     */
+    fun shown(stored: Map<String, Int>, common: List<String> = emptyList()): List<String> {
         val mine = stored.entries.filter { it.value >= 2 }.sortedByDescending { it.value }.map { it.key }
         val out = ArrayList<String>()
-        for (p in mine + DEFAULTS) if (out.none { key(it) == key(p) }) out.add(p)
+        for (p in mine + common + DEFAULTS) if (out.none { key(it) == key(p) }) out.add(p)
         return out.take(SHOWN)
     }
 
