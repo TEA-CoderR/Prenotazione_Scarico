@@ -144,6 +144,29 @@ internal fun MainActivity.scanTab(): View {
         rest.addView(c, ui.lp(bottom = 12))
     }
 
+    // requests to the purchasing office: one tap to the list with the answers
+    val reqs = list.server?.requests.orEmpty()
+    val rc = Requests.counts(reqs)
+    if ((rc[Requests.Filter.ALL] ?: 0) > 0) {
+        val toLook = rc[Requests.Filter.TODO] ?: 0
+        val waiting = rc[Requests.Filter.WAITING] ?: 0
+        val r = ui.row()
+        r.background = ui.bg(if (toLook > 0) C.AMBER_SOFT else C.CARD, 16, if (toLook > 0) C.AMBER_LINE else C.LINE)
+        r.setPadding(ui.dp(14), ui.dp(10), ui.dp(10), ui.dp(10))
+        r.addView(ui.iconBadge(Icons.SEND, if (toLook > 0) C.CARD else C.BLUE_SOFT, if (toLook > 0) C.AMBER_INK else C.BLUE_INK, 34, 18, 2.2f))
+        val t = ui.col()
+        t.addView(ui.text("Richieste all'ufficio", 14f, C.INK, ui.bold).oneLine())
+        t.addView(ui.text(listOfNotNull(
+            if (toLook > 0) (if (toLook == 1) "1 risposta da leggere" else "$toLook risposte da leggere") else null,
+            if (waiting > 0) "$waiting in attesa" else null,
+        ).joinToString(" · ").ifEmpty { "Tutte con risposta · vedi lo storico" }, 12f, if (toLook > 0) C.AMBER_INK else C.MUTED).oneLine(), ui.lp(top = 1))
+        r.addView(t, ui.lp(w = 0, weight = 1f, start = 10))
+        if (toLook > 0) r.addView(ui.num("$toLook", 15f, C.AMBER_INK))
+        r.addView(ui.icon(Icons.NEXT, C.FAINT, 16, 2.2f), LinearLayout.LayoutParams(ui.dp(16), ui.dp(16)).apply { marginStart = ui.dp(6) })
+        ui.tap(r, 16) { reqFilter = null; go(MainActivity.Tab.REQUESTS) }
+        rest.addView(r, ui.lp(bottom = 12))
+    }
+
     // scan target: corner marks + moving beam
     val target = FrameLayout(this)
     target.background = android.graphics.drawable.LayerDrawable(arrayOf(ui.bg(C.CARD, 20, C.LINE), Corners(C.BLUE, ui.dpf(3f), ui.dpf(26f), ui.dpf(18f), ui.dpf(6f))))

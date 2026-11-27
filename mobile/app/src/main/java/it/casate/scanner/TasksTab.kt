@@ -69,26 +69,24 @@ internal fun MainActivity.tasksTab(): View {
         }
     }
 
-    val reqs = list.requestsToShow().take(20)
-    if (reqs.isNotEmpty()) section("Richieste all'ufficio", reqs.count { it.status == "info" || it.unseen }, C.BLUE_INK) { c ->
+    // requests: here only what needs the store (to answer / to read); everything is on «Richieste all'ufficio»
+    val allReqs = list.server?.requests.orEmpty()
+    val reqs = Requests.page(allReqs, Requests.Filter.TODO).take(10)
+    val nAll = Requests.counts(allReqs)[Requests.Filter.ALL] ?: 0
+    if (nAll > 0) section("Richieste all'ufficio", reqs.size, C.BLUE_INK) { c ->
         for ((i, r) in reqs.withIndex()) {
             if (i > 0) c.addView(ui.divider(52))
-            val (lbl, fg, fill) = when {
-                r.status == "info" -> Triple("RISPONDI", C.AMBER_INK, C.AMBER_SOFT)
-                r.status == "open" -> Triple("IN ATTESA", C.BLUE_INK, C.BLUE_SOFT)
-                r.answerKind == "no" -> Triple("NO", C.RED_INK, C.RED_SOFT)
-                r.answerKind == "use" -> Triple("USA ALTRO", C.AMBER_INK, C.AMBER_SOFT)
-                else -> Triple("SÌ", C.GREEN_INK, C.GREEN_SOFT)
-            }
-            val sub = when {
-                r.status == "open" -> "Chiesto " + dayTime(r.updatedAt)
-                r.answer.isNotEmpty() -> r.answer
-                else -> Requests.title(r)
-            }
-            val title = (if (r.unseen) "● " else "") + r.name.ifEmpty { r.ean }
-            c.addView(ui.listRow(ui.photo(r.ean, r.name, 40, fg), title, sub, if (r.unseen) C.INK else C.MUTED,
-                ui.chip(lbl, fg, fill, 10f)) { openItem(r.ean) })
+            val fg = if (r.status == "info" || r.answerKind == "use") C.AMBER_INK else if (r.answerKind == "no") C.RED_INK else C.GREEN_INK
+            val fill = if (fg == C.AMBER_INK) C.AMBER_SOFT else if (fg == C.RED_INK) C.RED_SOFT else C.GREEN_SOFT
+            val sub = if (r.answer.isNotEmpty()) r.answer else Requests.title(r)
+            c.addView(ui.listRow(ui.photo(r.ean, r.name, 40, fg), "● " + r.name.ifEmpty { r.ean }, sub, C.INK,
+                ui.chip(Requests.chip(r), fg, fill, 10f)) { openItem(r.ean) })
         }
+        if (reqs.isNotEmpty()) c.addView(ui.divider())
+        val waiting = Requests.counts(allReqs)[Requests.Filter.WAITING] ?: 0
+        c.addView(ui.listRow(ui.iconBadge(Icons.LIST, C.BLUE_SOFT, C.BLUE_INK, 40, 20, 2.2f), "Tutte le richieste",
+            "$nAll negli ultimi 90 giorni" + (if (waiting > 0) " · $waiting in attesa" else ""), C.MUTED,
+            ui.icon(Icons.NEXT, C.FAINT, 18, 2.2f)) { reqFilter = null; go(MainActivity.Tab.REQUESTS) })
     }
 
     val reps = list.server?.stockReports.orEmpty().sortedByDescending { it.createdAt }.take(12)

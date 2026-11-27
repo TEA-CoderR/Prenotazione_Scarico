@@ -294,10 +294,46 @@ object Requests {
         else -> 0
     }
 
+    /** The views of the «Richieste all'ufficio» page. */
+    enum class Filter(val label: String) { TODO("Da guardare"), WAITING("In attesa"), ANSWERED("Risposte"), ALL("Tutte") }
+
+    /** To do for the store: the office asked something, or answered and nobody read it yet. */
+    fun toLook(r: ProductRequest) = r.status == "info" || r.unseen
+
+    fun matches(r: ProductRequest, f: Filter): Boolean = when (f) {
+        Filter.TODO -> toLook(r)
+        Filter.WAITING -> r.status == "open"
+        Filter.ANSWERED -> r.status == "answered"
+        Filter.ALL -> true
+    }
+
+    /** One line per item (its newest request), the ones to look at first, then newest first. */
+    fun page(all: List<ProductRequest>, f: Filter): List<ProductRequest> =
+        all.groupBy { it.ean.trimStart('0') }.values.map { g -> g.maxByOrNull { it.updatedAt }!! }
+            .filter { f == Filter.ALL || it.status != "cancelled" }
+            .filter { matches(it, f) }
+            .sortedWith(compareBy<ProductRequest>({ rank(it) }, { -it.updatedAt }))
+
+    fun counts(all: List<ProductRequest>): Map<Filter, Int> = Filter.values().associateWith { page(all, it).size }
+
+    /** Opening the page: what to look at if there is something, otherwise everything. */
+    fun firstFilter(all: List<ProductRequest>): Filter = if (page(all, Filter.TODO).isNotEmpty()) Filter.TODO else Filter.ALL
+
+    /** Short state on the right of a row. */
+    fun chip(r: ProductRequest): String = when {
+        r.status == "cancelled" -> "ANNULLATA"
+        r.status == "info" -> "RISPONDI"
+        r.status == "open" -> "IN ATTESA"
+        r.answerKind == "no" -> "NO"
+        r.answerKind == "use" -> "USA ALTRO"
+        else -> "SÌ"
+    }
+
     fun rank(r: ProductRequest): Int = when {
         r.status == "info" -> 0
         r.unseen -> 1
         r.status == "open" -> 2
+        r.status == "cancelled" -> 4
         else -> 3
     }
 }

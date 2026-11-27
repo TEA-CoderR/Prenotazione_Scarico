@@ -59,7 +59,7 @@ private data class Quad(val a: Int, val b: Int, val c: Int, val d: Icons.Spec)
 private fun MainActivity.markRequestSeen(r: ProductRequest) {
     io.execute {
         val ok = runCatching { api.requestAction(r.id, "seen") }.isSuccess
-        if (ok) runCatching { api.fetchList() }.getOrNull()?.let { v -> main.post { list.applied(v, emptyList()) } }
+        if (ok) runCatching { api.fetchList() }.getOrNull()?.let { v -> main.post { list.applied(v, emptyList()); if (!sheet.isOpen && !fullScreen) render() } }
     }
 }
 
