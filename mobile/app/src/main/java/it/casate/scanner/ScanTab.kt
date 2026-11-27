@@ -251,6 +251,7 @@ internal fun MainActivity.scanTab(): View {
     val bar = ui.col()
     // «search» mode: while the field is in use the navy header and the bottom button go away, so the
     // results get the whole screen above the keyboard and nobody taps «Rivedi e invia lista» by mistake.
+    var tapped = false          // the field was touched by someone (see the focus listener below)
     fun mode(on: Boolean) {
         head.visibility = if (on) View.GONE else View.VISIBLE
         bar.visibility = if (on) View.GONE else View.VISIBLE
@@ -265,7 +266,7 @@ internal fun MainActivity.scanTab(): View {
         clear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
         rest.visibility = if (searching) View.GONE else View.VISIBLE
         lastBox.visibility = if (searching) View.GONE else View.VISIBLE
-        if (searching || input.hasFocus()) mode(true)
+        if (searching || (input.hasFocus() && tapped)) mode(true)
         if (cat == null || !searching) return
         if (t.all { it.isDigit() } && t.length < 4) {
             results.addView(ui.text("Scrivi almeno 4 cifre del codice", 13f, C.MUTED), ui.lp(top = 12))
@@ -302,7 +303,16 @@ internal fun MainActivity.scanTab(): View {
         else { searchNow(s); if (s.length >= 2) hideKeyboard(input) else input.requestFocus() }
     }
     ui.tap(clear, 999) { input.setText(""); input.requestFocus() }
-    input.setOnFocusChangeListener { _, has -> if (has) mode(true) else if (input.text.isNullOrBlank()) mode(false) }
+    // search mode only when someone taps the field (or types): Android also gives the focus to the first text box by
+    // itself (after a dialog closes, after the page is rebuilt) and that hid the header and the bottom bar
+    input.setOnTouchListener { _, ev -> if (ev.action == android.view.MotionEvent.ACTION_UP) tapped = true; false }
+    input.setOnFocusChangeListener { _, has ->
+        when {
+            has && (tapped || !input.text.isNullOrBlank()) -> mode(true)
+            has -> main.post { if (!tapped && input.text.isNullOrBlank()) { input.clearFocus(); focusSink() } }
+            input.text.isNullOrBlank() -> { tapped = false; mode(false) }
+        }
+    }
     var burst = 0L
     input.addTextChangedListener(object : android.text.TextWatcher {
         override fun afterTextChanged(e: android.text.Editable?) {

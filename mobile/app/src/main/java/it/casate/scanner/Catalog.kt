@@ -104,6 +104,8 @@ class Catalog(
     val dataDate: String = "",
     /** The next VOLANTINO, if the office published one with this catalog. */
     val volantino: VolantinoInfo? = null,
+    /** Sentences the stores write most to the office (quick phrases of «Chiedi all'ufficio»). */
+    val phrases: List<String> = emptyList(),
 ) {
     init { Companion.horizon = horizon.coerceIn(7, 28) }
     val size get() = items.size

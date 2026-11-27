@@ -10,15 +10,16 @@ class StoreToolsTest {
     @Test
     fun phrasesLearnedFromWhatTheStoreWritesReplaceTheDefaults() {
         assertEquals(Phrases.DEFAULTS, Phrases.shown(emptyMap()))
-        var m = Phrases.learn(emptyMap(), "Finito da 2 settimane. I clienti lo chiedono")
+        var m = Phrases.learn(emptyMap(), "Finito da 2 settimane. Lo chiedono i clienti, ne vendevamo tanti")
         assertEquals(Phrases.DEFAULTS, Phrases.shown(m))                       // once: not yet
         m = Phrases.learn(m, "finito da 2 settimane, ne servono 2 colli")
-        val shown = Phrases.shown(m)
-        assertEquals("Finito da 2 settimane", shown[0])                         // written twice → first
-        assertEquals(5, shown.size)
-        assertTrue(shown.contains("I clienti lo chiedono"))                    // no duplicates of a default
-        assertEquals(1, shown.count { it.equals("i clienti lo chiedono", ignoreCase = true) })
-        assertEquals("I clienti lo chiedono", Phrases.append("", "I clienti lo chiedono"))
+        val common = listOf("Mandate il sostituto", "lo chiedono i clienti, ne vendevamo tanti")
+        val shown = Phrases.shown(m, common)
+        assertEquals("Finito da 2 settimane", shown[0])                         // this scanner, written twice → first
+        assertEquals("Mandate il sostituto", shown[1])                          // then what all the stores write
+        assertEquals(Phrases.SHOWN, shown.size)
+        assertEquals(1, shown.count { it.equals("Lo chiedono i clienti, ne vendevamo tanti", ignoreCase = true) })
+        assertEquals("Finito", Phrases.append("", "Finito"))
         assertEquals("Finito, i clienti lo chiedono", Phrases.append("Finito", "I clienti lo chiedono"))
         assertEquals("Finito, i clienti lo chiedono", Phrases.append("Finito, i clienti lo chiedono", "I clienti lo chiedono"))
     }

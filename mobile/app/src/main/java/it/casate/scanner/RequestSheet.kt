@@ -191,7 +191,7 @@ private fun MainActivity.officeThread(target: String, name: String, v: Verdict, 
     }
     if (!replying) {
         val chips = ui.row()
-        for ((i, ph) in Phrases.shown(phraseStore()).withIndex()) {
+        for ((i, ph) in Phrases.shown(phraseStore(), catalog?.phrases.orEmpty()).withIndex()) {
             val c = ui.text(ph, 13f, C.INK, ui.medium).apply {
                 background = ui.bg(C.CARD, 999, C.LINE2)
                 setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(7))
@@ -251,7 +251,7 @@ private fun MainActivity.officeThread(target: String, name: String, v: Verdict, 
     }
     box.addView(form)
     d = bottomDialog(box)
-    d.setOnDismissListener { onShoot = null }
+    d.setOnDismissListener { onShoot = null; main.post { focusSink() } }
     d.show()
     note.requestFocus()
     d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or

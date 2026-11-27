@@ -79,7 +79,20 @@ internal fun MainActivity.showItem() {
         val oc = ui.col()
         oc.addView(ui.text("HAI SCANSIONATO · NON PIÙ IN VENDITA", 10f, C.MUTED, ui.bold).oneLine())
         oc.addView(ui.struck(ui.text(v.item.name, 13f, C.MUTED, ui.medium)).oneLine(), ui.lp(top = 3))
+        // the old item's numbers too (stock still on the shelf, what it sold): no need to look the old code up
+        val oi = catalog?.info(v.item.ean)
+        if (oi != null) {
+            val parts = listOfNotNull("In negozio ${n(oi.stock ?: 0.0)} pz", "venduti 30g ${n(oi.sold30 ?: 0.0)}",
+                oi.lastSaleDays?.let { when (it) { 0 -> "ultima vendita oggi"; 1 -> "ultima vendita ieri"; else -> "ultima vendita $it gg fa" } },
+                (oi.transitBoxes ?: 0.0).takeIf { it > 0 }?.let { "in arrivo ${n(it)} ${colli(it.toInt())}" })
+            oc.addView(ui.text(parts.joinToString(" · "), 12f, if ((oi.stock ?: 0.0) > 0) C.INK else C.MUTED, ui.medium).lines(2), ui.lp(top = 4))
+        }
         old.addView(oc, ui.lp(w = 0, weight = 1f, start = 12))
+        if (oi != null) {
+            old.addView(ui.icon(Icons.NEXT, C.MUTED, 16, 2.2f), LinearLayout.LayoutParams(ui.dp(16), ui.dp(16)).apply { marginStart = ui.dp(6) })
+            val oldPack = oi.pack?.takeIf { it > 0 } ?: v.item.pack
+            ui.tap(old, 16) { inStoreFromSheet(p, v.item.ean, v.item.name, oi, oldPack) }
+        }
         body.addView(old)
         body.addView(ui.icon(Icons.DOWN, C.BLUE, 20, 2.4f), LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(6); bottomMargin = ui.dp(6) })
     }
