@@ -147,6 +147,16 @@ class Api(private val ctx: Context) {
         get() = prefs.getString("to_count", "") ?: ""
         set(v) = prefs.edit().putString("to_count", v).apply()
 
+    /** Sections folded on the list page (comma-separated Sections.Kind names; "-" = none). */
+    var listFolded: String
+        get() = prefs.getString("list_folded", "") ?: ""
+        set(v) = prefs.edit().putString("list_folded", v).apply()
+
+    /** Quick sentences for the office, learned from what this scanner sends (JSON sentence → uses; see Phrases). */
+    var phrases: String
+        get() = prefs.getString("phrases", "") ?: ""
+        set(v) = prefs.edit().putString("phrases", v).apply()
+
     /** How often this scanner chose each "why do you order it" reason (most used shown first). */
     var whyUse: String
         get() = prefs.getString("why_use", "") ?: ""
@@ -265,6 +275,12 @@ class Api(private val ctx: Context) {
             addedToList = o.optBoolean("addedToList"), storeReply = str(o, "storeReply") ?: "",
             seenAt = time(str(o, "seenAt")), createdAt = time(str(o, "createdAt")), updatedAt = time(str(o, "updatedAt")),
             handledAt = time(str(o, "handledAt")),
+            messages = o.optJSONArray("messages")?.let { a ->
+                (0 until a.length()).mapNotNull { k -> a.optJSONObject(k) }.map { m ->
+                    RequestMessage(m.optString("by") != "office", m.optString("text"), time(str(m, "at")),
+                        if (m.has("boxes") && !m.isNull("boxes")) m.optInt("boxes") else null, m.optBoolean("photo"), m.optString("kind"))
+                }
+            }.orEmpty(),
         )
 
         fun parseReport(o: JSONObject) = StockReport(
@@ -314,11 +330,26 @@ class Api(private val ctx: Context) {
                     cost = num(r, 5), price = num(r, 6), promoPrice = num(r, 7),
                     promoEnd = if (r.length() > 8 && !r.isNull(8)) r.optString(8) else "", pack = num(r, 9),
                     lastSaleDays = num(r, 10)?.toInt(), suspect = (num(r, 11) ?: 0.0) > 0,
+                    arrivals = r.optJSONArray(12)?.let { a ->
+                        (0 until a.length()).mapNotNull { k -> a.optJSONArray(k)?.let { x ->
+                            Arrival(x.optInt(0), x.optDouble(1, 0.0), x.optInt(2) == 1, x.optString(3), num(x, 4)) } }
+                    }.orEmpty(),
+                    months = r.optJSONArray(13)?.let { a -> (0 until a.length()).map { k -> a.optDouble(k, 0.0) } },
+                    others = r.optJSONArray(14)?.let { a ->
+                        (0 until a.length()).mapNotNull { k -> a.optJSONArray(k)?.let { x -> x.optString(0) to x.optDouble(1, 0.0) } }
+                    }.orEmpty(),
+                    vol = r.optJSONArray(15)?.let { x ->
+                        VolItem(num(x, 0), x.optDouble(1, 0.0), x.optInt(2, 2), if (x.isNull(3)) "" else x.optString(3),
+                            num(x, 4)?.toInt(), x.optInt(5) == 1)
+                    },
                 )
             }
             val adv = o.optJSONObject("advice")
+            val vol = o.optJSONObject("volantino")?.let {
+                VolantinoInfo(it.optString("name"), it.optString("start"), it.optString("end"), it.optInt("days"), it.optInt("items"))
+            }
             return Catalog(o.optInt("id"), o.optString("week"), o.optString("publishedAt"), map, info, o.optString("imageUrl"),
-                horizon = adv?.optInt("horizon", 14) ?: 14, dataDate = adv?.optString("dataDate", "") ?: "")
+                horizon = adv?.optInt("horizon", 14) ?: 14, dataDate = adv?.optString("dataDate", "") ?: "", volantino = vol)
         }
     }
 }

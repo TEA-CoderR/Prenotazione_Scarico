@@ -51,7 +51,7 @@ class MainActivity : Activity() {
     internal val main = Handler(Looper.getMainLooper())
     private var tones: ToneGenerator? = null
 
-    internal enum class Tab { SCAN, LIST, TASKS }
+    internal enum class Tab { SCAN, LIST, TASKS, REQUESTS, VOLANTINO }
     internal var tab = Tab.SCAN
     /** A full-screen page over the tabs (pairing, counting): scans are ignored there. */
     internal var fullScreen = false
@@ -63,6 +63,10 @@ class MainActivity : Activity() {
     /** One line shown once (green toast-like bar on the scan tab) after something was put in the list. */
     internal var flash: String? = null
     internal var search = ""
+    /** Set while the home page is in «search» mode (header and bottom bar hidden): Back leaves it. */
+    internal var searchExit: (() -> Unit)? = null
+    /** The view open on «Richieste all'ufficio» (null = choose when the page opens). */
+    internal var reqFilter: Requests.Filter? = null
     /** The item on the card (see ItemSheet). */
     internal var pending: Pending? = null
 
@@ -310,7 +314,8 @@ class MainActivity : Activity() {
             sheet.isOpen -> sheet.back()
             countBack != null -> { val b = countBack!!; countBack = null; b() }
             !api.paired -> super.onBackPressed()
-            tab != Tab.SCAN -> go(Tab.SCAN)
+            tab == Tab.SCAN && searchExit != null -> searchExit!!()
+            tab != Tab.SCAN -> { reqFilter = null; go(Tab.SCAN) }
             else -> super.onBackPressed()
         }
     }
@@ -332,6 +337,8 @@ class MainActivity : Activity() {
             Tab.SCAN -> scanTab()
             Tab.LIST -> listTab()
             Tab.TASKS -> tasksTab()
+            Tab.REQUESTS -> requestsTab()
+            Tab.VOLANTINO -> volantinoTab()
         }
         col.addView(content, ui.lp(h = 0, weight = 1f))
         statusBar(dark = true)

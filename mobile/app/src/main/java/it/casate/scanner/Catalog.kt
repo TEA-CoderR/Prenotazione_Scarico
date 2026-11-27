@@ -39,6 +39,14 @@ data class StoreInfo(
     val lastSaleDays: Int? = null,
     /** The purchasing program thinks the stock may not be real (it should sell, but nothing sold for a long time). */
     val suspect: Boolean = false,
+    /** Deliveries of the last 12 months, newest first (only from 08/01/2025: older records are wrong). */
+    val arrivals: List<Arrival> = emptyList(),
+    /** Pieces sold each month, oldest → this month (12 values; null = nothing sold or not published). */
+    val months: List<Double>? = null,
+    /** Stock in the other stores (name, pieces); empty = none of them has it. */
+    val others: List<Pair<String, Double>> = emptyList(),
+    /** This item in the next VOLANTINO (null = not in it / no VOLANTINO published). */
+    val vol: VolItem? = null,
 ) {
     /** Days the stock lasts at the last 30 days' sales (null = no sales). */
     fun coverDays(extraPieces: Double = 0.0): Int? {
@@ -47,6 +55,21 @@ data class StoreInfo(
         return (((stock ?: 0.0).coerceAtLeast(0.0) + extraPieces) / (s / 30.0)).roundToInt()
     }
 }
+
+/** One delivery: day (yyyymmdd), pieces, from a supplier or moved from another store / the BMS warehouse. */
+data class Arrival(val day: Int, val qty: Double, val transfer: Boolean, val from: String, val soldSince: Double? = null) {
+    val dayText get() = "%02d/%02d/%02d".format(day % 100, day / 100 % 100, day / 10000 % 100)
+}
+
+/**
+ * An item of the next VOLANTINO for this store: offer price, pieces it should sell in the whole promotion
+ * (from the past promotions; `basis` 0 = it was in past VOLANTINO, 1 = estimate from the normal sales, 2 = no sales),
+ * the last promotion it was in and how many it sold there, and whether the office's checks flagged it.
+ */
+data class VolItem(val price: Double?, val expected: Double, val basis: Int, val lastName: String, val lastSold: Int?, val warn: Boolean)
+
+/** The VOLANTINO the office published with the catalog (dates yyyy-mm-dd). */
+data class VolantinoInfo(val name: String, val start: String, val end: String, val days: Int, val items: Int)
 
 enum class Kind {
     /** In Griglia, a wholesaler has it this week. */
@@ -79,6 +102,8 @@ class Catalog(
     val horizon: Int = 14,
     /** Day the store numbers are from (yyyy-mm-dd), "" = unknown. */
     val dataDate: String = "",
+    /** The next VOLANTINO, if the office published one with this catalog. */
+    val volantino: VolantinoInfo? = null,
 ) {
     init { Companion.horizon = horizon.coerceIn(7, 28) }
     val size get() = items.size
@@ -95,6 +120,9 @@ class Catalog(
     }
 
     fun judge(scan: String): Verdict = judgeItem(find(scan)) { find(it) }
+
+    /** Items of the VOLANTINO with this store's numbers (ean, info). */
+    fun volantinoItems(): List<Pair<String, StoreInfo>> = store.entries.filter { it.value.vol != null }.map { it.key to it.value }
 
     /** Items whose name has all the words (or whose barcode contains the digits): Griglia first. */
     fun search(q: String, limit: Int = 30): List<Item> {

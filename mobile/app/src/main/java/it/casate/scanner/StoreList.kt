@@ -74,10 +74,26 @@ data class ProductRequest(
     val createdAt: Long,
     val updatedAt: Long,
     val handledAt: Long,
+    /** The whole conversation, oldest first (platform ≥ 0009; empty on old data: see thread()). */
+    val messages: List<RequestMessage> = emptyList(),
 ) {
     /** The office answered (or asked something) and nobody on the store's scanners has looked at it yet. */
     val unseen get() = (status == "answered" || status == "info") && seenAt == 0L
+
+    /** The conversation to show: the messages, or what the old fields still say. */
+    fun thread(): List<RequestMessage> {
+        if (messages.isNotEmpty()) return messages
+        val out = ArrayList<RequestMessage>()
+        val first = listOf(note, if (reason != "other") Requests.REASONS[reason].orEmpty() else "").filter { it.isNotEmpty() }.joinToString(" · ")
+        out.add(RequestMessage(true, first, createdAt, boxes, hasPhoto && storeReply.isEmpty(), ""))
+        if (storeReply.isNotEmpty()) out.add(RequestMessage(true, storeReply, updatedAt, null, hasPhoto, ""))
+        if (answer.isNotEmpty()) out.add(RequestMessage(false, answer, if (handledAt > 0) handledAt else updatedAt, answerBoxes, false, answerKind))
+        return out
+    }
 }
+
+/** One message of a request: from the store (`mine`) or from the office. */
+data class RequestMessage(val mine: Boolean, val text: String, val at: Long, val boxes: Int?, val photo: Boolean, val kind: String)
 
 data class ServerView(
     val week: String,
@@ -294,10 +310,46 @@ object Requests {
         else -> 0
     }
 
+    /** The views of the «Richieste all'ufficio» page. */
+    enum class Filter(val label: String) { TODO("Da guardare"), WAITING("In attesa"), ANSWERED("Risposte"), ALL("Tutte") }
+
+    /** To do for the store: the office asked something, or answered and nobody read it yet. */
+    fun toLook(r: ProductRequest) = r.status == "info" || r.unseen
+
+    fun matches(r: ProductRequest, f: Filter): Boolean = when (f) {
+        Filter.TODO -> toLook(r)
+        Filter.WAITING -> r.status == "open"
+        Filter.ANSWERED -> r.status == "answered"
+        Filter.ALL -> true
+    }
+
+    /** One line per item (its newest request), the ones to look at first, then newest first. */
+    fun page(all: List<ProductRequest>, f: Filter): List<ProductRequest> =
+        all.groupBy { it.ean.trimStart('0') }.values.map { g -> g.maxByOrNull { it.updatedAt }!! }
+            .filter { f == Filter.ALL || it.status != "cancelled" }
+            .filter { matches(it, f) }
+            .sortedWith(compareBy<ProductRequest>({ rank(it) }, { -it.updatedAt }))
+
+    fun counts(all: List<ProductRequest>): Map<Filter, Int> = Filter.values().associateWith { page(all, it).size }
+
+    /** Opening the page: what to look at if there is something, otherwise everything. */
+    fun firstFilter(all: List<ProductRequest>): Filter = if (page(all, Filter.TODO).isNotEmpty()) Filter.TODO else Filter.ALL
+
+    /** Short state on the right of a row. */
+    fun chip(r: ProductRequest): String = when {
+        r.status == "cancelled" -> "ANNULLATA"
+        r.status == "info" -> "RISPONDI"
+        r.status == "open" -> "IN ATTESA"
+        r.answerKind == "no" -> "NO"
+        r.answerKind == "use" -> "USA ALTRO"
+        else -> "SÌ"
+    }
+
     fun rank(r: ProductRequest): Int = when {
         r.status == "info" -> 0
         r.unseen -> 1
         r.status == "open" -> 2
+        r.status == "cancelled" -> 4
         else -> 3
     }
 }

@@ -42,6 +42,8 @@ object Icons {
     val PLUS = spec("M12 5v14M5 12h14")
     val MINUS = spec("M5 12h14")
     val CLOSE = spec("M6 6l12 12M18 6L6 18")
+    val CAMERA = spec("M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8")
+    val STORE = spec("M4 10v10h16V10M3 10l2-6h14l2 6zM10 20v-6h4v6")
     val BOX = spec("M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8")
     val INFO = spec("M12 11v5M12 8h.01", floatArrayOf(12f, 12f, 8.5f))
     val REFRESH = spec("M4 18v-6h6") { it.addArc(RectF(4f, 4f, 20f, 20f), 180f, 290f) }

@@ -1,116 +1,101 @@
 package it.casate.scanner
 
 import android.app.AlertDialog
+import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 
-/** Filter of the List tab (chips under the title). */
-internal enum class ListFilter(val label: String) { ALL("Tutti"), CHECK("Da controllare"), URGENT("Non in Griglia"), SUB("Sostituti"), REMIND("Avvisi") }
-
-private var filter = ListFilter.ALL
+/** Sections folded on this scanner (tap a section title to fold / unfold it). */
+private val folded = HashSet<Sections.Kind>()
+private var foldLoaded = false
 
 /**
- * Tab 2 · Lista: everything that will be sent, changeable in place (− n +), the few lines worth a second
- * look marked in amber, and one button to send. After sending: the state of the list in the same place.
+ * Tab 2 · Lista (plan A, 2026-11-27): one long list, edge to edge, grouped by what each line is —
+ * «Da controllare» always on top, then Griglia, Non in Griglia, Sostituti, Avvisi (each foldable).
+ * One line of header, one button at the bottom: as many lines on the screen as possible.
  */
 internal fun MainActivity.listTab(): View {
+    if (!foldLoaded) {
+        foldLoaded = true
+        api.listFolded.split(',').mapNotNull { k -> Sections.Kind.values().firstOrNull { it.name == k } }.let(folded::addAll)
+        if (api.listFolded.isEmpty()) folded.add(Sections.Kind.REMIND)
+    }
     val root = ui.col()
     root.setBackgroundColor(C.CANVAS)
     val v = list.server
     val sent = list.submitted && !list.changedSinceSubmit
-    val head = header("Lista " + (v?.week?.let { weekNo(it).lowercase() } ?: ""),
-        v?.let { "chiude tra " + countdown(it.deadline) + " · " + shortDay(it.deadline) }, C.YELLOW) { go(MainActivity.Tab.SCAN) }
-    val stats = ui.row()
-    for ((i, s3) in listOf(
-        Triple("${list.ordered.size}", "articoli", android.graphics.Color.WHITE),
-        Triple("${list.boxes}", "colli", android.graphics.Color.WHITE),
-        Triple("${list.urgent}", "non in Griglia", if (list.urgent > 0) C.CORAL else android.graphics.Color.WHITE),
-    ).withIndex()) {
-        val c = ui.col()
-        c.background = ui.bg(C.NAVY2, 12)
-        c.setPadding(ui.dp(10), ui.dp(8), ui.dp(8), ui.dp(8))
-        c.addView(ui.num(s3.first, 20f, s3.third))
-        c.addView(ui.text(s3.second, 11f, C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 2))
-        stats.addView(c, ui.lp(w = 0, weight = 1f, start = if (i == 0) 0 else 6))
+
+    // one line of header: back · week · articles / boxes / deadline · «n da contare»
+    val head = ui.row()
+    head.setBackgroundColor(C.NAVY)
+    head.setPadding(ui.dp(12), ui.dp(10), ui.dp(14), ui.dp(10))
+    val b = ui.icon(Icons.BACK, Color.WHITE, 34, 2.2f).apply {
+        setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); background = ui.bg(C.NAVY3, 10); contentDescription = "Indietro"
     }
-    head.addView(stats, ui.lp(top = 12))
+    ui.tap(b, 10, true) { go(MainActivity.Tab.SCAN) }
+    head.addView(b, ui.fixed(34, 34))
+    val tc = ui.col()
+    tc.addView(ui.text("Lista " + (v?.week?.let { weekNo(it).lowercase() } ?: ""), 17f, Color.WHITE, ui.bold).oneLine())
+    val sub = listOfNotNull("${list.ordered.size} articoli", "${list.boxes} colli",
+        if (list.urgent > 0) "${list.urgent} non in Griglia" else null,
+        v?.let { "chiude " + shortDay(it.deadline) }).joinToString(" · ")
+    tc.addView(ui.text(sub, 12f, C.ON_NAVY_MUTED).oneLine(), ui.lp(top = 1))
+    head.addView(tc, ui.lp(w = 0, weight = 1f, start = 10))
+    if (toCount.size > 0 && !sent) {
+        val pill = ui.text("${toCount.size} da contare", 12f, C.YELLOW, ui.bold).apply {
+            background = ui.bg(0xFF4A3A10.toInt(), 999); setPadding(ui.dp(10), ui.dp(5), ui.dp(10), ui.dp(5))
+        }
+        ui.tap(pill, 999, true) { go(MainActivity.Tab.TASKS) }
+        head.addView(pill, ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
+    }
     root.addView(head)
 
     val body = ui.col()
-    body.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(14))
-    val stateLine = when {
-        v == null -> Triple("Lista non ancora scaricata · serve il Wi-Fi", C.MUTED, null)
-        sent && v.list?.status == "ordered" -> Triple("Ordinata dall'ufficio acquisti", C.GREEN_INK, Icons.CHECK)
-        sent -> Triple("Inviata " + dayTime(v.list!!.submittedAt) + " · modificabile fino a " + shortDay(v.deadline), C.GREEN_INK, Icons.CHECK)
-        list.submitted -> Triple("Modificata dopo l'invio: inviala di nuovo", C.AMBER_INK, Icons.ALERT)
-        else -> null
-    }
-    if (stateLine != null) {
-        val sl = ui.row()
-        sl.background = ui.bg(if (stateLine.second == C.GREEN_INK) C.GREEN_SOFT else if (stateLine.second == C.AMBER_INK) C.AMBER_SOFT else 0xFFEEF1F6.toInt(), 12)
-        sl.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
-        stateLine.third?.let { sl.addView(ui.icon(it, stateLine.second, 16, 2.4f)) }
-        sl.addView(ui.text(stateLine.first, 13f, stateLine.second, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = if (stateLine.third != null) 8 else 0))
-        body.addView(sl, ui.lp(bottom = 12))
-    }
-
-    // filters
     val chk = checks()
-    val all = list.lines()
-    val counts = mapOf(
-        ListFilter.ALL to list.ordered.size,
-        ListFilter.CHECK to chk.size,
-        ListFilter.URGENT to all.count { it.boxes > 0 && it.kind == "urgent" },
-        ListFilter.SUB to all.count { it.boxes > 0 && it.kind == "sub" },
-        ListFilter.REMIND to all.count { it.kind == "remind" },
-    )
-    if (counts[filter] == 0) filter = ListFilter.ALL
-    val chips = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
-    val cr = ui.row()
-    for (f in ListFilter.values()) {
-        val n = counts[f] ?: 0
-        if (f != ListFilter.ALL && n == 0) continue
-        cr.addView(ui.choice("${f.label} $n", f == filter, if (f == ListFilter.CHECK) C.AMBER_INK else C.NAVY) { filter = f; render() },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = ui.dp(8) })
-    }
-    chips.addView(cr)
-    body.addView(chips)
-
     val warn = chk.associateBy { it.line.ean }
-    val rows = when (filter) {
-        ListFilter.ALL -> all.filter { it.boxes > 0 } + all.filter { it.kind == "remind" }
-        ListFilter.CHECK -> chk.map { it.line }
-        ListFilter.URGENT -> all.filter { it.boxes > 0 && it.kind == "urgent" }
-        ListFilter.SUB -> all.filter { it.boxes > 0 && it.kind == "sub" }
-        ListFilter.REMIND -> all.filter { it.kind == "remind" }
-    }
-    if (rows.isEmpty()) {
+    val groups = Sections.group(list.lines(), warn.keys)
+    if (groups.isEmpty()) {
         val e = ui.col(28)
         e.gravity = Gravity.CENTER_HORIZONTAL
-        e.background = ui.dashed(0xFFC4CCDA.toInt(), C.CARD, 18)
         e.addView(ui.icon(Icons.BARCODE, C.FAINT, 36, 1.6f), LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { gravity = Gravity.CENTER_HORIZONTAL })
         e.addView(ui.text("La lista è vuota", 17f, C.INK, ui.bold).apply { gravity = Gravity.CENTER }, ui.lp(top = 10))
-        e.addView(ui.text("Scansiona gli articoli da ordinare", 13f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 4))
+        e.addView(ui.text(if (v == null) "Lista non ancora scaricata · serve il Wi-Fi" else "Scansiona gli articoli da ordinare", 13f, C.MUTED)
+            .apply { gravity = Gravity.CENTER }, ui.lp(top = 4))
         ui.tap(e, 18) { go(MainActivity.Tab.SCAN) }
-        body.addView(e, ui.lp(top = 12))
-    } else {
-        val card = ui.card(20)
-        card.setPadding(ui.dp(12), ui.dp(2), ui.dp(8), ui.dp(2))
-        for ((i, l) in rows.withIndex()) {
-            if (i > 0) card.addView(ui.divider(52))
-            card.addView(lineRow(l, warn[l.ean]))
+        body.addView(e, ui.lp(top = 30))
+    }
+    for ((k, lines) in groups) {
+        val check = k == Sections.Kind.CHECK
+        val h = ui.row()
+        h.setBackgroundColor(if (check) 0xFFFFF8E6.toInt() else C.CANVAS)
+        h.setPadding(ui.dp(16), ui.dp(9), ui.dp(14), ui.dp(6))
+        val boxes = lines.sumOf { it.boxes }
+        h.addView(ui.text(k.title.uppercase() + " · ${lines.size}", 12f, if (check) C.AMBER_INK else C.MUTED, ui.bold)
+            .apply { letterSpacing = 0.06f }, ui.lp(w = 0, weight = 1f))
+        if (boxes > 0) h.addView(ui.text("$boxes ${colli(boxes)}", 12f, C.MUTED))
+        val closed = k in folded
+        h.addView(ui.icon(if (closed) Icons.NEXT else Icons.DOWN, C.MUTED, 16, 2.2f), ui.fixed(16, 16, 8))
+        ui.tap(h, 0) {
+            if (!folded.remove(k)) folded.add(k)
+            api.listFolded = folded.joinToString(",") { it.name }.ifEmpty { "-" }
+            render()
         }
-        body.addView(card, ui.lp(top = 12))
+        body.addView(h)
+        if (closed) continue
+        for (l in lines) {
+            body.addView(lineRow(l, warn[l.ean]))
+            body.addView(ui.divider(68))
+        }
     }
     val last = list.fromLastWeek()
-    if (last.isNotEmpty() && filter == ListFilter.ALL && !sent) {
-        val b = ui.row(Gravity.CENTER)
-        b.background = ui.dashed(0xFFC4CCDA.toInt(), C.CARD, 14)
-        b.addView(ui.icon(Icons.REFRESH, C.INK, 16, 2f))
-        b.addView(ui.text("Riprendi la settimana scorsa · ${last.size}", 14f, C.INK, ui.medium), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
-        ui.tap(b, 14) {
+    if (last.isNotEmpty() && !sent) {
+        val r = ui.row(Gravity.CENTER)
+        r.setPadding(0, ui.dp(14), 0, ui.dp(14))
+        r.addView(ui.icon(Icons.REFRESH, C.BLUE, 16, 2f))
+        r.addView(ui.text("Riprendi la settimana scorsa · ${last.size}", 14f, C.BLUE, ui.bold), ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = 8))
+        ui.tap(r, 0) {
             AlertDialog.Builder(this).setTitle("Aggiungere ${last.size} articoli?")
                 .setMessage("Con gli stessi colli della settimana scorsa (esclusi i non in Griglia).")
                 .setPositiveButton("Aggiungi") { _, _ ->
@@ -119,28 +104,22 @@ internal fun MainActivity.listTab(): View {
                     api.savePending(list); sync(quiet = true); render()
                 }.setNegativeButton("Annulla", null).show()
         }
-        body.addView(b, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ui.dp(48)).apply { topMargin = ui.dp(12) })
+        body.addView(r)
     }
     root.addView(ScrollView(this).apply { addView(body) }, ui.lp(h = 0, weight = 1f))
 
-    // send
+    // one button: its text says the state of the list
     val bar = ui.col()
     bar.setBackgroundColor(C.CARD)
-    bar.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(16))
-    if (toCount.size > 0 && !sent) {
-        val w = ui.row()
-        w.setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(8))
-        w.addView(ui.icon(Icons.ALERT, C.AMBER_INK, 14, 2.4f))
-        w.addView(ui.text("${toCount.size} da contare prima di inviare", 12f, C.AMBER_INK, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = 6))
-        ui.tap(w, 8) { go(MainActivity.Tab.TASKS) }
-        bar.addView(w)
-    }
+    bar.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12))
     when {
-        sent -> bar.addView(ui.primary("Inviata", C.GREEN, false, Icons.CHECK) {})
-        else -> bar.addView(ui.primary(if (list.submitted) "Invia le modifiche" else "Invia la lista · ${list.boxes} colli", C.BLUE, list.ordered.isNotEmpty(), Icons.SEND,
+        sent && v?.list?.status == "ordered" -> bar.addView(ui.primary("Ordinata dall'ufficio acquisti", C.GREEN, false, Icons.CHECK) {})
+        sent -> bar.addView(ui.primary("Inviata " + dayTime(v!!.list!!.submittedAt) + " · modificabile fino a " + shortDay(v.deadline),
+            C.GREEN, false, Icons.CHECK) {})
+        else -> bar.addView(ui.primary(if (list.submitted) "Invia le modifiche · ${list.boxes} colli" else "Invia la lista · ${list.boxes} colli",
+            if (list.submitted) C.AMBER_INK else C.BLUE, list.ordered.isNotEmpty(), Icons.SEND,
             whyDisabled = { toast("La lista è vuota") }) { confirmSend() })
     }
-    if (v != null && !sent) bar.addView(ui.text("Dopo l'invio puoi ancora modificarla fino a " + shortDay(v.deadline), 12f, C.MUTED).apply { gravity = Gravity.CENTER }, ui.lp(top = 8))
     root.addView(bar)
     return root
 }
@@ -148,9 +127,10 @@ internal fun MainActivity.listTab(): View {
 /** One line: photo, name, what it is (or why to check it), − n + in place. Tap = its card. */
 private fun MainActivity.lineRow(l: Line, warn: MainActivity.Check?): View {
     val r = ui.row()
-    r.setPadding(0, ui.dp(10), 0, ui.dp(10))
+    r.setBackgroundColor(C.CARD)
+    r.setPadding(ui.dp(14), ui.dp(8), ui.dp(10), ui.dp(8))
     val left = ui.row()
-    left.addView(ui.photo(l.ean, l.name, 44, lineColor(l.kind)))
+    left.addView(ui.photo(l.ean, l.name, 42, lineColor(l.kind)))
     val c = ui.col()
     c.addView(ui.text(l.name.ifEmpty { l.ean }, 14f, C.INK, ui.medium).lines(2))
     val adv = if (l.kind == "griglia" || l.kind == "sub") Catalog.advise(catalog?.info(l.ean), packOf(l.ean)).boxes else null
@@ -160,8 +140,8 @@ private fun MainActivity.lineRow(l: Line, warn: MainActivity.Check?): View {
         l.kind == "urgent" -> ("Non in Griglia · " + (l.reason ?: "")) to C.ORANGE
         l.kind == "remind" -> "Avvisami quando torna" to C.AMBER_INK
         !l.reason.isNullOrEmpty() -> ("Motivo · " + l.reason) to C.MUTED
-        adv != null -> "Consigliato $adv" to (if (Feedbacks.overOrder(adv, l.boxes)) C.AMBER_INK else C.MUTED)
-        else -> colli(l.boxes) to C.MUTED
+        adv != null && Feedbacks.overOrder(adv, l.boxes) -> "Consigliati $adv · ne metti ${l.boxes}" to C.AMBER_INK
+        else -> (packOf(l.ean)?.let { pk -> "${n(pk)} pz/collo · ${n(pk * l.boxes)} pz" } ?: "${l.boxes} ${colli(l.boxes)}") to C.MUTED
     }
     c.addView(ui.text(sub, 12f, color).oneLine(), ui.lp(top = 3))
     left.addView(c, ui.lp(w = 0, weight = 1f, start = 12))
@@ -172,7 +152,7 @@ private fun MainActivity.lineRow(l: Line, warn: MainActivity.Check?): View {
         return r
     }
     var nb = l.boxes
-    val st = Stepper(ui, { nb }, { nb = it }, 0, 40, 17f, l.name.ifEmpty { l.ean }, onChange = {}, onDone = {
+    val st = Stepper(ui, { nb }, { nb = it }, 0, 36, 16f, l.name.ifEmpty { l.ean }, onChange = {}, onDone = {
         if (nb == l.boxes) return@Stepper
         if (nb <= 0) {
             AlertDialog.Builder(this).setTitle("Togliere dalla lista?").setMessage(l.name)
@@ -180,7 +160,7 @@ private fun MainActivity.lineRow(l: Line, warn: MainActivity.Check?): View {
                 .setNegativeButton("Annulla") { _, _ -> render() }.show()
         } else { change(l.copy(boxes = nb, updatedBy = api.deviceName, updatedAt = System.currentTimeMillis())) }
     })
-    r.addView(st.view, LinearLayout.LayoutParams(ui.dp(124), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = ui.dp(6) })
+    r.addView(st.view, LinearLayout.LayoutParams(ui.dp(112), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = ui.dp(6) })
     return r
 }
 

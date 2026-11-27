@@ -107,7 +107,18 @@ internal fun MainActivity.showItem() {
             cover < 14 -> ui.tile("Basta per", "$cover", "gg", C.AMBER_SOFT, C.AMBER_LINE, C.AMBER_INK, C.AMBER_INK)
             else -> ui.tile("Basta per", "$cover", "gg")
         })
+        // tap = «In negozio»: deliveries, sales per month, other stores, stock check
+        val open = { inStoreFromSheet(p, target, name, info, pack) }
+        ui.tap(tiles, 12) { open() }
         body.addView(tiles, ui.lp(top = 14))
+        val more = ui.row()
+        more.setPadding(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(2))
+        more.addView(ui.icon(Icons.STORE, C.BLUE, 15, 2f))
+        val what = listOfNotNull(info.arrivals.firstOrNull()?.let { "ultimo arrivo ${it.dayText}" }, "vendite al mese", "altri negozi")
+        more.addView(ui.text("In negozio: " + what.joinToString(" · "), 12f, C.BLUE, ui.bold).oneLine(), ui.lp(w = 0, weight = 1f, start = 6))
+        more.addView(ui.icon(Icons.NEXT, C.BLUE, 14, 2.4f))
+        ui.tap(more, 8) { open() }
+        body.addView(more)
     } else if (v.kind != Kind.UNKNOWN) {
         val r = ui.row()
         r.background = ui.bg(0xFFEEF1F6.toInt(), 12)
@@ -602,6 +613,14 @@ private fun MainActivity.commitWithReason(p: Pending, ean: String, name: String,
     p.reason = "Altro"
     p.other = reason
     return commit(p, ean, name)
+}
+
+/** Opens «In negozio» from the card; Back = the card again. */
+private fun MainActivity.inStoreFromSheet(p: Pending, ean: String, name: String, info: StoreInfo, pack: Double?) {
+    val keep = p
+    sheet.onClose = null
+    sheet.close(false)
+    showInStore(ean, name, info, pack) { pending = keep; render(); showItem() }
 }
 
 /** Opens the count screen from the card; afterwards back to the card (or straight in the list). */
