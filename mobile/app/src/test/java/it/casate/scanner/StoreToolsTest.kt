@@ -56,9 +56,9 @@ class StoreToolsTest {
     fun inStoreSinceLastDeliveryAndMonthAverage() {
         val info = StoreInfo(stock = 6.0, arrivals = listOf(Arrival(20261112, 24.0, false, "MELONI", 18.0), Arrival(20261015, 6.0, true, "S.MARCO")))
         val s = InStore.since(info)!!
-        assertEquals("12/11/26", s.day); assertEquals(24.0, s.arrived); assertEquals(18.0, s.sold); assertEquals("MELONI", s.from)
+        assertEquals("12/11/26", s.day); assertEquals(24.0, s.arrived, 1e-9); assertEquals(18.0, s.sold, 1e-9); assertEquals("MELONI", s.from)
         assertNull(InStore.since(StoreInfo(stock = 1.0)))
-        assertEquals(20.0, InStore.monthAvg(listOf(10.0, 30.0, 99.0))!!)                    // this month left out
+        assertEquals(20.0, InStore.monthAvg(listOf(10.0, 30.0, 99.0))!!, 1e-9)                    // this month left out
     }
 
     @Test
