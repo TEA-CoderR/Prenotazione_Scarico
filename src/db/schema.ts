@@ -336,6 +336,8 @@ export const stockReport = pgTable("stock_report", {
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
+export type RequestMessage = { by: "store" | "office"; text: string; at: string; boxes?: number; photo?: boolean; kind?: string };
+
 export const productRequest = pgTable("product_request", {
   id: serial("id").primaryKey(),
   entityCode: smallint("entity_code").notNull(),
@@ -359,6 +361,8 @@ export const productRequest = pgTable("product_request", {
   handledAt: tstz("handled_at"),
   storeReply: text("store_reply"),
   seenAt: tstz("seen_at"),
+  /** The whole conversation, oldest first (see drizzle/0009_request_messages.sql). */
+  messages: jsonb("messages").$type<RequestMessage[]>().notNull().default([]),
   createdAt: tstz("created_at").notNull().defaultNow(),
   updatedAt: tstz("updated_at").notNull().defaultNow(),
 });

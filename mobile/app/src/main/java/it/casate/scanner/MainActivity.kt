@@ -51,7 +51,7 @@ class MainActivity : Activity() {
     internal val main = Handler(Looper.getMainLooper())
     private var tones: ToneGenerator? = null
 
-    internal enum class Tab { SCAN, LIST, TASKS, REQUESTS }
+    internal enum class Tab { SCAN, LIST, TASKS, REQUESTS, VOLANTINO }
     internal var tab = Tab.SCAN
     /** A full-screen page over the tabs (pairing, counting): scans are ignored there. */
     internal var fullScreen = false
@@ -338,6 +338,7 @@ class MainActivity : Activity() {
             Tab.LIST -> listTab()
             Tab.TASKS -> tasksTab()
             Tab.REQUESTS -> requestsTab()
+            Tab.VOLANTINO -> volantinoTab()
         }
         col.addView(content, ui.lp(h = 0, weight = 1f))
         statusBar(dark = true)

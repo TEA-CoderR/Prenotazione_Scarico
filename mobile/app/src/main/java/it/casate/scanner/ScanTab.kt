@@ -167,6 +167,7 @@ internal fun MainActivity.scanTab(): View {
         ui.tap(r, 16) { reqFilter = null; go(MainActivity.Tab.REQUESTS) }
         rest.addView(r, ui.lp(bottom = 12))
     }
+    if (catalog != null) rest.addView(volantinoCard(), ui.lp(bottom = 12))
 
     // scan target: corner marks + moving beam
     val target = FrameLayout(this)

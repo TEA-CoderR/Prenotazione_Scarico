@@ -99,4 +99,21 @@ describe.skipIf(!url)("product requests (PostgreSQL)", () => {
     expect((await storeAction(db, foiano, c.id, { action: "cancel" }, NOW)).status).toBe("cancelled");
     expect((await storeRequests(db, 1, NOW)).map((x) => x.ean)).toEqual(["8001480000017"]);
   });
+
+  it("keeps the whole conversation (store ⇄ office); undo takes the answer's message back", async () => {
+    const r = await askRequest(db, foiano, { ...ask, reason: "other", note: "Finito da 2 settimane" }, NOW);
+    expect(r.messages).toEqual([{ by: "store", text: "Finito da 2 settimane", at: NOW.toISOString(), boxes: 2 }]);
+    await answerRequest(db, r.id, { action: "answer", kind: "info", answer: "È il formato da 6?" }, NOW);
+    await storeAction(db, foiano, r.id, { action: "reply", note: "Sì, da 6", photo: jpeg }, NOW);
+    const done = await answerRequest(db, r.id, { action: "answer", kind: "no", answer: "Non lo trattiamo" }, NOW);
+    expect(done.messages.map((m) => [m.by, m.text])).toEqual([
+      ["store", "Finito da 2 settimane"], ["office", "È il formato da 6?"], ["store", "Sì, da 6"], ["office", "Non lo trattiamo"]]);
+    expect(done.messages[2].photo).toBe(true);
+    const back = await answerRequest(db, r.id, { action: "reopen" }, NOW);
+    expect(back.messages.map((m) => m.text)).toEqual(["Finito da 2 settimane", "È il formato da 6?", "Sì, da 6"]);
+    // asking again while open adds the new message
+    const again = await askRequest(db, foiano, { ...ask, reason: "other", note: "Ne servono 3 colli", boxes: 3 }, NOW);
+    expect(again.messages).toHaveLength(4);
+    expect(again.messages[3]).toMatchObject({ by: "store", text: "Ne servono 3 colli", boxes: 3 });
+  });
 });

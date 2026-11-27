@@ -7,7 +7,7 @@
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@/db/client";
-import { productRequest, storeListLine } from "@/db/schema";
+import { productRequest, storeListLine, type RequestMessage } from "@/db/schema";
 import { BookingError } from "@/lib/booking/errors";
 import { ensureList, getRule, normEan } from "@/lib/store-lists";
 
@@ -49,6 +49,32 @@ export const askSchema = z.object({
 
 type Row = typeof productRequest.$inferSelect;
 
+/** The conversation: the stored messages, or (requests from before the messages column) what the old fields still say. */
+export function threadOf(r: Row): RequestMessage[] {
+  if (r.messages?.length) return r.messages;
+  const out: RequestMessage[] = [];
+  const at = r.createdAt.toISOString();
+  const first = [r.note ?? "", r.reason !== "other" ? REASON_TEXT[r.reason] ?? "" : ""].filter(Boolean).join(" · ");
+  out.push({ by: "store", text: first, at, ...(r.boxes ? { boxes: r.boxes } : {}) });
+  if (r.storeReply) out.push({ by: "store", text: r.storeReply, at: r.updatedAt.toISOString() });
+  if (r.answer) out.push({ by: "office", text: r.answer, at: (r.handledAt ?? r.updatedAt).toISOString(), kind: r.answerKind ?? undefined });
+  return out;
+}
+
+const REASON_TEXT: Record<string, string> = {
+  customers: "I clienti lo chiedono",
+  replaces: "Sostituisce un articolo finito",
+  new: "Novità del fornitore",
+};
+
+function dropLastAnswer(t: RequestMessage[], answer: string | null): RequestMessage[] {
+  const i = t.map((x) => x.by).lastIndexOf("office");
+  return i >= 0 && answer && t[i].text === answer ? [...t.slice(0, i), ...t.slice(i + 1)] : t;
+}
+
+const msg = (by: RequestMessage["by"], text: string, now: Date, extra: Partial<RequestMessage> = {}): RequestMessage =>
+  ({ by, text, at: now.toISOString(), ...extra });
+
 const view = (r: Row) => ({
   id: r.id,
   entityCode: r.entityCode,
@@ -71,6 +97,7 @@ const view = (r: Row) => ({
   handledAt: r.handledAt?.toISOString() ?? null,
   storeReply: r.storeReply,
   seenAt: r.seenAt?.toISOString() ?? null,
+  messages: threadOf(r),
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -99,14 +126,15 @@ export async function askRequest(db: Db, device: { name: string; entityCode: num
     updatedAt: now,
     ...(p.photo ? { photo: p.photo } : {}),
   };
+  const m = msg("store", p.note ?? "", now, { ...(p.boxes ? { boxes: p.boxes } : {}), ...(p.photo ? { photo: true } : {}) });
   return db.transaction(async (tx) => {
     const [open] = await tx
-      .select({ id: productRequest.id })
+      .select()
       .from(productRequest)
       .where(and(eq(productRequest.entityCode, store), eq(productRequest.ean, p.ean), inArray(productRequest.status, OPEN)));
     const [r] = open
-      ? await tx.update(productRequest).set(v).where(eq(productRequest.id, open.id)).returning()
-      : await tx.insert(productRequest).values({ entityCode: store, ean: p.ean, ...v, createdAt: now }).returning();
+      ? await tx.update(productRequest).set({ ...v, messages: [...threadOf(open), m] }).where(eq(productRequest.id, open.id)).returning()
+      : await tx.insert(productRequest).values({ entityCode: store, ean: p.ean, ...v, messages: [m], createdAt: now }).returning();
     return view(r);
   });
 }
@@ -148,7 +176,13 @@ export async function storeAction(db: Db, device: { name: string; entityCode: nu
   } else {
     if (r.status !== "info") throw new BookingError("CONFLICT", "L'ufficio non ha chiesto altre informazioni");
     if (!note && !pic) throw new BookingError("VALIDATION", "Scrivi la risposta o fai una foto");
-    set = { status: "open", storeReply: note ?? null, updatedAt: now, ...(pic ? { photo: pic } : {}) };
+    set = {
+      status: "open",
+      storeReply: note ?? null,
+      updatedAt: now,
+      messages: [...threadOf(r), msg("store", note ?? "", now, pic ? { photo: true } : {})],
+      ...(pic ? { photo: pic } : {}),
+    };
   }
   const [u] = await db.update(productRequest).set(set).where(eq(productRequest.id, id)).returning();
   return view(u);
@@ -215,6 +249,8 @@ export async function answerRequest(db: Db, id: number, raw: unknown, now = new 
           handledAt: null,
           seenAt: null,
           updatedAt: now,
+          // the answer is taken back: its message goes too
+          messages: dropLastAnswer(threadOf(r), r.answer),
         })
         .where(eq(productRequest.id, id))
         .returning();
@@ -266,6 +302,7 @@ export async function answerRequest(db: Db, id: number, raw: unknown, now = new 
         seenAt: null,
         storeReply: a.kind === "info" ? null : r.storeReply,
         updatedAt: now,
+        messages: [...threadOf(r), msg("office", a.answer, now, { kind: a.kind, ...(a.boxes ? { boxes: a.boxes } : {}) })],
       })
       .where(eq(productRequest.id, id))
       .returning();
