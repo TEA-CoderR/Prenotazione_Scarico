@@ -69,6 +69,28 @@ internal fun MainActivity.tasksTab(): View {
         }
     }
 
+    val reqs = list.requestsToShow().take(20)
+    if (reqs.isNotEmpty()) section("Richieste all'ufficio", reqs.count { it.status == "info" || it.unseen }, C.BLUE_INK) { c ->
+        for ((i, r) in reqs.withIndex()) {
+            if (i > 0) c.addView(ui.divider(52))
+            val (lbl, fg, fill) = when {
+                r.status == "info" -> Triple("RISPONDI", C.AMBER_INK, C.AMBER_SOFT)
+                r.status == "open" -> Triple("IN ATTESA", C.BLUE_INK, C.BLUE_SOFT)
+                r.answerKind == "no" -> Triple("NO", C.RED_INK, C.RED_SOFT)
+                r.answerKind == "use" -> Triple("USA ALTRO", C.AMBER_INK, C.AMBER_SOFT)
+                else -> Triple("SÌ", C.GREEN_INK, C.GREEN_SOFT)
+            }
+            val sub = when {
+                r.status == "open" -> "Chiesto " + dayTime(r.updatedAt)
+                r.answer.isNotEmpty() -> r.answer
+                else -> Requests.title(r)
+            }
+            val title = (if (r.unseen) "● " else "") + r.name.ifEmpty { r.ean }
+            c.addView(ui.listRow(ui.photo(r.ean, r.name, 40, fg), title, sub, if (r.unseen) C.INK else C.MUTED,
+                ui.chip(lbl, fg, fill, 10f)) { openItem(r.ean) })
+        }
+    }
+
     val reps = list.server?.stockReports.orEmpty().sortedByDescending { it.createdAt }.take(12)
     if (reps.isNotEmpty()) section("Giacenze segnalate", reps.count { it.status == "open" }, C.BLUE_INK) { c ->
         for ((i, r) in reps.withIndex()) {

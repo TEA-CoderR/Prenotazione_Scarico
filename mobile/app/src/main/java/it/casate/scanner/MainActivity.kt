@@ -67,6 +67,20 @@ class MainActivity : Activity() {
     internal var pending: Pending? = null
 
     internal val toCount: ToCount by lazy { ToCount(api.toCount) }
+    /** Waiting for the camera (a photo for the purchasing office, see Photos / RequestSheet). */
+    internal var onPhoto: ((ByteArray?) -> Unit)? = null
+
+    @Deprecated("Activity API (no AndroidX in this app)")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == Photos.REQUEST) {
+            val cb = onPhoto
+            onPhoto = null
+            val ok = resultCode == RESULT_OK
+            io.execute { val b = Photos.result(this, ok); main.post { cb?.invoke(b) } }
+            return
+        }
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+    }
     internal fun saveToCount() { api.toCount = toCount.save() }
 
     private val receiver = object : BroadcastReceiver() {
@@ -346,7 +360,8 @@ class MainActivity : Activity() {
     }
 
     /** Things waiting in the To-do tab (badge). */
-    internal fun todoCount(): Int = toCount.size + checks().size + backInStock().size + (if (update != null) 1 else 0)
+    internal fun todoCount(): Int = toCount.size + checks().size + backInStock().size + list.requestsToRead +
+        (list.server?.requests.orEmpty().count { it.status == "info" && !it.unseen }) + (if (update != null) 1 else 0)
 
     /** Navy bar of the inner pages: Back · store · week · what is in the list. */
     internal fun topBar(back: Boolean, onBack: () -> Unit = { onBackPressed() }): View {
