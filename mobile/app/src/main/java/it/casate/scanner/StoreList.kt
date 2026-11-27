@@ -47,6 +47,38 @@ data class StockReport(
     val handledAt: Long,
 )
 
+/**
+ * A question to the purchasing office about an item the store cannot order (unknown barcode, out of the
+ * Griglia, no wholesaler this week). status: open (waiting) · info (the office asks for more information)
+ * · answered. answerKind: use (order answerEan instead) · griglia (added to the Griglia) · once (ordered this
+ * week only) · direct (from the direct supplier answerName) · no (we do not sell it) · info.
+ */
+data class ProductRequest(
+    val id: Int,
+    val ean: String,
+    val name: String,
+    val kind: String,
+    val reason: String,
+    val boxes: Int?,
+    val note: String,
+    val hasPhoto: Boolean,
+    val status: String,
+    val answerKind: String,
+    val answer: String,
+    val answerEan: String,
+    val answerName: String,
+    val answerBoxes: Int?,
+    val addedToList: Boolean,
+    val storeReply: String,
+    val seenAt: Long,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val handledAt: Long,
+) {
+    /** The office answered (or asked something) and nobody on the store's scanners has looked at it yet. */
+    val unseen get() = (status == "answered" || status == "info") && seenAt == 0L
+}
+
 data class ServerView(
     val week: String,
     val deadline: Long,
@@ -55,6 +87,7 @@ data class ServerView(
     val reminders: List<Line>,
     val fetchedAt: Long,
     val stockReports: List<StockReport> = emptyList(),
+    val requests: List<ProductRequest> = emptyList(),
 )
 
 class StoreList(var server: ServerView? = null, val pending: LinkedHashMap<String, Line> = LinkedHashMap()) {
@@ -75,6 +108,21 @@ class StoreList(var server: ServerView? = null, val pending: LinkedHashMap<Strin
             ?.takeIf { it.status == "open" || now - maxOf(it.handledAt, it.createdAt) < 14L * 86_400_000 }
 
     val openReports get() = server?.stockReports.orEmpty().count { it.status == "open" }
+
+    /** The newest request about this item (any scanner of the store), or null. */
+    fun request(ean: String): ProductRequest? {
+        val e = ean.trimStart('0')
+        return server?.requests.orEmpty().filter { it.ean.trimStart('0') == e }.maxByOrNull { it.updatedAt }
+    }
+
+    /** Requests to show in «Da fare»: what the store must answer, new answers, then the ones waiting. */
+    fun requestsToShow(now: Long = System.currentTimeMillis()): List<ProductRequest> =
+        server?.requests.orEmpty()
+            .filter { it.status != "answered" || it.unseen || now - it.handledAt < 7L * 86_400_000 }
+            .sortedWith(compareBy<ProductRequest>({ Requests.rank(it) }, { -it.updatedAt }))
+
+    /** Things the store has to look at: the office asked for information, or answered and nobody read it. */
+    val requestsToRead get() = server?.requests.orEmpty().count { it.unseen }
 
     fun set(line: Line) {
         pending[line.ean] = line
@@ -197,4 +245,59 @@ class ToCount(saved: String = "") {
     /** newest first */
     fun all(): List<Item> = items.values.sortedByDescending { it.at }
     fun save(): String = items.values.joinToString("\n") { "${it.ean}\t${it.name}\t${it.at}" }
+}
+
+/** Product requests to the purchasing office: which scans can ask, and the words shown for each answer. */
+object Requests {
+    /** Why the store wants the item (code → what the scanner shows). */
+    val REASONS = linkedMapOf(
+        "customers" to "I clienti lo chiedono",
+        "replaces" to "Sostituisce un articolo finito",
+        "new" to "Novità del fornitore",
+        "other" to "Altro",
+    )
+
+    /** Unknown barcodes, items taken out of the Griglia and Griglia items no wholesaler has this week. */
+    fun eligible(v: Verdict): Boolean = when (v.kind) {
+        Kind.UNKNOWN, Kind.NOT_AVAILABLE -> true
+        Kind.URGENT_ONLY, Kind.DIRECT_ONLY -> v.item?.griglia == 2
+        else -> false
+    }
+
+    /** What the scanner said about the item (sent with the request). */
+    fun itemKind(v: Verdict): String = when (v.kind) {
+        Kind.UNKNOWN -> "unknown"
+        Kind.NOT_AVAILABLE -> "noquote"
+        else -> "off"
+    }
+
+    /** Title of the state (one line on the card). */
+    fun title(r: ProductRequest): String = when {
+        r.status == "open" -> "Richiesta inviata · in attesa dell'ufficio"
+        r.status == "info" -> "L'ufficio chiede più informazioni"
+        else -> when (r.answerKind) {
+            "use" -> "Ordina un altro articolo"
+            "griglia" -> "Aggiunto in Griglia"
+            "once" -> "Ordinato per questa settimana"
+            "direct" -> "Si ordina dal fornitore diretto"
+            "no" -> "Non lo trattiamo"
+            else -> "Risposta dell'ufficio"
+        }
+    }
+
+    /** 0 = good news (green) · 1 = to do / info (amber) · 2 = waiting (blue) · 3 = no (red) */
+    fun tone(r: ProductRequest): Int = when {
+        r.status == "open" -> 2
+        r.status == "info" -> 1
+        r.answerKind == "no" -> 3
+        r.answerKind == "use" -> 1
+        else -> 0
+    }
+
+    fun rank(r: ProductRequest): Int = when {
+        r.status == "info" -> 0
+        r.unseen -> 1
+        r.status == "open" -> 2
+        else -> 3
+    }
 }

@@ -128,9 +128,12 @@ internal fun MainActivity.showItem() {
             body.addView(infoCard(if (d.isNotEmpty()) Icons.TRUCK else Icons.INFO, if (d.isNotEmpty()) C.GREEN_INK else C.MUTED,
                 if (d.isNotEmpty()) C.GREEN_SOFT else 0xFFF1F4F8.toInt(),
                 if (d.isNotEmpty()) "Dal fornitore diretto $d" else "Non si ordina nella lista DETERSIVI",
-                if (d.isNotEmpty()) "Con l'ordine diretto del negozio" else "Se serve davvero, chiedi all'ufficio acquisti"), ui.lp(top = 16))
+                if (d.isNotEmpty()) "Con l'ordine diretto del negozio"
+                else if (Requests.eligible(v)) "Se serve, chiedilo all'ufficio da qui: ti rispondono sullo scanner"
+                else "Se serve davvero, chiedi all'ufficio acquisti"), ui.lp(top = 16))
         }
     }
+    if (Requests.eligible(v)) requestBlock(body, target)
     lastWeekLine(target)?.let { body.addView(it, ui.lp(top = 14)) }
 
     sheet.show(hero, body, actions(p, v, target, item, info, sys, adv, inList, rep), animate = p.fresh)
@@ -475,6 +478,17 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
                 })
         }
         Kind.URGENT_ONLY -> {
+            if (Requests.eligible(v)) {
+                val r = list.request(target)
+                val b = when (r?.status) {
+                    "info" -> ui.outline("Rispondi all'ufficio", C.AMBER_INK, C.AMBER) { replyOffice(r, name) }
+                    "open" -> requestEdit(target, name, v)
+                    else -> ui.outline(if (r == null) "Chiedi all'ufficio di rimetterlo in Griglia" else "Chiedi di nuovo all'ufficio", C.BLUE_INK, 0xFFC6D5FF.toInt()) {
+                        askOffice(target, name, v, null)
+                    }
+                }
+                b?.let { c.addView(it, ui.lp(bottom = 10)) }
+            }
             val inIt = inList != null && inList.boxes > 0 && inList.kind == "urgent"
             pair(if (inIt) ui.button("Togli", 0, C.RED_INK, size = 15f) { removeLine(target); done("Tolto dalla lista") }
                 else ui.button("Non serve", 0, C.INK, size = 15f) { done(null) },
@@ -494,8 +508,13 @@ private fun MainActivity.actions(p: Pending, v: Verdict, target: String, item: I
                     }
                 })
         }
-        Kind.NOT_AVAILABLE -> c.addView(ui.primary("OK · prossimo articolo", C.NAVY, true, Icons.CHECK) { done(commit(p, target, name)) })
-        else -> c.addView(ui.primary("OK · prossimo articolo", C.NAVY, true, Icons.CHECK) { done(null) })
+        Kind.NOT_AVAILABLE, Kind.UNKNOWN, Kind.DIRECT_ONLY -> {
+            val ok = { done(if (v.kind == Kind.NOT_AVAILABLE) commit(p, target, name) else null) }
+            requestEdit(target, name, v)?.let { c.addView(it, ui.lp(bottom = 10)) }
+            val ask = requestButton(target, name, v)
+            if (ask != null) pair(ui.button("OK", 0, C.INK, size = 15f) { ok() }, ask)
+            else c.addView(ui.primary("OK · prossimo articolo", C.NAVY, true, Icons.CHECK) { ok() })
+        }
     }
     return c
 }

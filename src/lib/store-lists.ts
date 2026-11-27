@@ -114,7 +114,7 @@ function needStore(entityCode: number | null): number {
   return entityCode;
 }
 
-async function ensureList(db: Db, entityCode: number, now: Date, rule: DeadlineRule) {
+export async function ensureList(db: Db, entityCode: number, now: Date, rule: DeadlineRule) {
   const { week, deadline } = nextDeadline(now, rule);
   await db.insert(storeList).values({ entityCode, week, deadline, createdAt: now, updatedAt: now }).onConflictDoNothing();
   const [s] = await db

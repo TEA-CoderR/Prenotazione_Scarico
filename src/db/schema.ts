@@ -2,6 +2,7 @@
 // (they carry the exclusion constraint Drizzle cannot express); keep this file in sync.
 import {
   bigserial,
+  customType,
   bigint,
   boolean,
   date,
@@ -329,6 +330,35 @@ export const stockReport = pgTable("stock_report", {
   answer: text("answer"),
   handledBy: text("handled_by"),
   handledAt: tstz("handled_at"),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+  updatedAt: tstz("updated_at").notNull().defaultNow(),
+});
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+export const productRequest = pgTable("product_request", {
+  id: serial("id").primaryKey(),
+  entityCode: smallint("entity_code").notNull(),
+  ean: text("ean").notNull(),
+  name: text("name").notNull().default(""),
+  kind: text("kind").notNull().default("unknown"),
+  reason: text("reason").notNull(),
+  boxes: integer("boxes"),
+  note: text("note"),
+  photo: bytea("photo"),
+  device: text("device"),
+  status: text("status").notNull().default("open"),
+  answerKind: text("answer_kind"),
+  answer: text("answer"),
+  answerEan: text("answer_ean"),
+  answerName: text("answer_name"),
+  answerBoxes: integer("answer_boxes"),
+  addedListId: integer("added_list_id"),
+  addedBefore: integer("added_before"),
+  handledBy: text("handled_by"),
+  handledAt: tstz("handled_at"),
+  storeReply: text("store_reply"),
+  seenAt: tstz("seen_at"),
   createdAt: tstz("created_at").notNull().defaultNow(),
   updatedAt: tstz("updated_at").notNull().defaultNow(),
 });

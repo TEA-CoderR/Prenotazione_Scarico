@@ -159,6 +159,22 @@ class Api(private val ctx: Context) {
         return parseReport(JSONObject(request("POST", "/api/scanner/stock-report", body).second))
     }
 
+    /** Asks the purchasing office about an item (replaces the store's open request of the same item). */
+    fun askOffice(ean: String, name: String, kind: String, reason: String, boxes: Int?, note: String, photo: ByteArray?): ProductRequest {
+        val body = JSONObject().put("ean", ean).put("name", name.take(120)).put("kind", kind).put("reason", reason)
+            .put("boxes", boxes?.takeIf { it > 0 } ?: JSONObject.NULL).put("note", note.trim().take(300).ifEmpty { null } ?: JSONObject.NULL)
+        if (photo != null) body.put("photo", android.util.Base64.encodeToString(photo, android.util.Base64.NO_WRAP))
+        return parseRequest(JSONObject(request("POST", "/api/scanner/requests", body).second))
+    }
+
+    /** reply (to the office's question, with a note and/or a photo) · seen · cancel */
+    fun requestAction(id: Int, action: String, note: String? = null, photo: ByteArray? = null): ProductRequest {
+        val body = JSONObject().put("action", action)
+        if (!note.isNullOrBlank()) body.put("note", note.trim().take(300))
+        if (photo != null) body.put("photo", android.util.Base64.encodeToString(photo, android.util.Base64.NO_WRAP))
+        return parseRequest(JSONObject(request("POST", "/api/scanner/requests/$id", body).second))
+    }
+
     fun loadCatalog(): Catalog? {
         if (!catalogFile.exists()) return null
         return runCatching { parse(JSONObject(catalogFile.readText(Charsets.UTF_8))) }.getOrNull()
@@ -228,12 +244,28 @@ class Api(private val ctx: Context) {
             o.optJSONArray("stockReports")?.let { a ->
                 for (i in 0 until a.length()) a.optJSONObject(i)?.let { reps.add(parseReport(it)) }
             }
+            val reqs = ArrayList<ProductRequest>()
+            o.optJSONArray("requests")?.let { a ->
+                for (i in 0 until a.length()) a.optJSONObject(i)?.let { reqs.add(parseRequest(it)) }
+            }
             return ServerView(
                 week = o.optString("week"), deadline = time(o.optString("deadline")),
                 list = parseList(o.optJSONObject("list")), previous = parseList(o.optJSONObject("previous")),
-                reminders = rem, fetchedAt = System.currentTimeMillis(), stockReports = reps,
+                reminders = rem, fetchedAt = System.currentTimeMillis(), stockReports = reps, requests = reqs,
             )
         }
+
+        fun parseRequest(o: JSONObject) = ProductRequest(
+            id = o.optInt("id"), ean = o.optString("ean"), name = o.optString("name"), kind = o.optString("kind"),
+            reason = o.optString("reason"), boxes = if (o.isNull("boxes") || !o.has("boxes")) null else o.optInt("boxes"),
+            note = str(o, "note") ?: "", hasPhoto = o.optBoolean("hasPhoto"), status = o.optString("status"),
+            answerKind = str(o, "answerKind") ?: "", answer = str(o, "answer") ?: "", answerEan = str(o, "answerEan") ?: "",
+            answerName = str(o, "answerName") ?: "",
+            answerBoxes = if (o.isNull("answerBoxes") || !o.has("answerBoxes")) null else o.optInt("answerBoxes"),
+            addedToList = o.optBoolean("addedToList"), storeReply = str(o, "storeReply") ?: "",
+            seenAt = time(str(o, "seenAt")), createdAt = time(str(o, "createdAt")), updatedAt = time(str(o, "updatedAt")),
+            handledAt = time(str(o, "handledAt")),
+        )
 
         fun parseReport(o: JSONObject) = StockReport(
             id = o.optInt("id"), ean = o.optString("ean"), name = o.optString("name"),

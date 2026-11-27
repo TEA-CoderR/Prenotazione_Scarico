@@ -11,6 +11,9 @@
     <queries>
         <package android:name="com.symbol.datawedge" />
         <package android:name="com.intermec.datacollectionservice" />
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
     </queries>
 
     <application
@@ -30,6 +33,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- the camera app writes the photo of a request to the office here (Photos.kt) -->
+        <provider
+            android:name=".PhotoProvider"
+            android:authorities="it.casate.scanner.photo"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <receiver
             android:name=".InstallReceiver"
             android:exported="false" />
