@@ -2,7 +2,6 @@ package it.casate.scanner
 
 import android.view.Gravity
 import android.view.View
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 
@@ -10,7 +9,7 @@ import android.widget.ScrollView
  * «Richieste all'ufficio»: every item the store asked the purchasing office about (last 90 days, all the
  * store's scanners), one line per item, so nobody has to scan things again to see if the office answered.
  * Views: Da guardare (answers not read yet / the office asks something) · In attesa · Risposte · Tutte.
- * Tap a line = the item's card, with the whole answer (opening it marks the answer as read).
+ * Tap a line = the conversation with the office (opening it marks the answer as read); the item on top of it opens the card.
  */
 internal fun MainActivity.requestsTab(): View {
     val all = list.server?.requests.orEmpty()
@@ -26,19 +25,29 @@ internal fun MainActivity.requestsTab(): View {
     ).joinToString(" · ").ifEmpty { if (all.isEmpty()) "Nessuna richiesta" else "Tutte lette" }
     root.addView(header("Richieste all'ufficio", sub, if (toLook > 0) C.YELLOW else C.ON_NAVY_MUTED) { reqFilter = null; go(MainActivity.Tab.SCAN) })
 
-    // views
-    val chips = ui.row()
-    chips.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(4))
-    for ((i, x) in Requests.Filter.values().withIndex()) {
+    // views: one segmented bar as wide as the screen (number on top, name below), nothing goes off screen
+    val seg = ui.row()
+    seg.background = ui.bg(0xFFE8ECF3.toInt(), 14)
+    seg.setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3))
+    for (x in Requests.Filter.values()) {
         val n = counts[x] ?: 0
-        val color = if (x == Requests.Filter.TODO && n > 0) C.AMBER_INK else C.BLUE
-        chips.addView(ui.choice(if (n > 0) "${x.label} $n" else x.label, x == f, color) { reqFilter = x; render() },
-            ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = if (i == 0) 0 else 8))
+        val on = x == f
+        val alert = x == Requests.Filter.TODO && n > 0
+        val c = ui.col()
+        c.gravity = Gravity.CENTER
+        c.setPadding(ui.dp(2), ui.dp(7), ui.dp(2), ui.dp(7))
+        if (on) c.background = ui.bg(C.CARD, 11)
+        c.addView(ui.num(n.toString(), 16f, when { alert -> C.AMBER_INK; on -> C.BLUE_INK; n == 0 -> C.FAINT; else -> C.INK })
+            .apply { gravity = Gravity.CENTER })
+        c.addView(ui.text(x.label, 11f, if (on) C.INK else C.MUTED, if (on) ui.bold else ui.medium).oneLine()
+            .apply { gravity = Gravity.CENTER }, ui.lp(top = 1))
+        ui.tap(c, 11) { reqFilter = x; render() }
+        seg.addView(c, ui.lp(w = 0, weight = 1f))
     }
-    val hs = HorizontalScrollView(this)
-    hs.isHorizontalScrollBarEnabled = false
-    hs.addView(chips)
-    root.addView(hs)
+    val segBox = ui.col()
+    segBox.setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(2))
+    segBox.addView(seg)
+    root.addView(segBox)
 
     val body = ui.col()
     body.setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(20))
@@ -100,7 +109,8 @@ private fun MainActivity.requestRow(r: ProductRequest): View {
     c.addView(ui.text(if (r.status == "cancelled") "Annullata dal negozio" else Requests.title(r), 12f, fg, ui.bold).oneLine(), ui.lp(top = 3))
     val detail = when {
         r.status == "open" || r.answer.isEmpty() ->
-            "Chiesto " + dayTime(r.createdAt) + " · " + Requests.REASONS[r.reason].orEmpty() + (r.boxes?.let { " · $it ${colli(it)}" } ?: "")
+            "Chiesto " + dayTime(r.createdAt) + (r.boxes?.let { " · $it ${colli(it)}" } ?: "") +
+                (r.thread().lastOrNull { it.mine }?.text?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: "")
         else -> "Ufficio " + dayTime(if (r.handledAt > 0) r.handledAt else r.updatedAt) + ": " + r.answer
     }
     c.addView(ui.text(detail, 12f, C.MUTED).lines(2), ui.lp(top = 2))
@@ -109,6 +119,6 @@ private fun MainActivity.requestRow(r: ProductRequest): View {
     row.addView(c, ui.lp(w = 0, weight = 1f, start = 12))
     row.addView(ui.chip(Requests.chip(r), fg, fill, 10f),
         LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = ui.dp(8) })
-    ui.tap(row, 12) { openItem(r.ean) }
+    ui.tap(row, 12) { openThread(r) }
     return row
 }

@@ -9,6 +9,10 @@ import org.junit.Test
 class StoreToolsTest {
     @Test
     fun phrasesLearnedFromWhatTheStoreWritesReplaceTheDefaults() {
+        // for now (28/11) only the one sentence, whatever this scanner or the stores write
+        assertEquals(listOf("C'è un articolo che lo sostituisce o tolgo questo prodotto dallo scaffale?"),
+            Phrases.shown(mapOf("Finito da 2 settimane" to 5), listOf("Mandate il sostituto")))
+        Phrases.ONLY_DEFAULTS = false
         assertEquals(Phrases.DEFAULTS, Phrases.shown(emptyMap()))
         var m = Phrases.learn(emptyMap(), "Finito da 2 settimane. Lo chiedono i clienti, ne vendevamo tanti")
         assertEquals(Phrases.DEFAULTS, Phrases.shown(m))                       // once: not yet
@@ -17,8 +21,9 @@ class StoreToolsTest {
         val shown = Phrases.shown(m, common)
         assertEquals("Finito da 2 settimane", shown[0])                         // this scanner, written twice → first
         assertEquals("Mandate il sostituto", shown[1])                          // then what all the stores write
-        assertEquals(Phrases.SHOWN, shown.size)
+        assertEquals(4, shown.size)                                             // + the default
         assertEquals(1, shown.count { it.equals("Lo chiedono i clienti, ne vendevamo tanti", ignoreCase = true) })
+        Phrases.ONLY_DEFAULTS = true
         assertEquals("Finito", Phrases.append("", "Finito"))
         assertEquals("Finito, i clienti lo chiedono", Phrases.append("Finito", "I clienti lo chiedono"))
         assertEquals("Finito, i clienti lo chiedono", Phrases.append("Finito, i clienti lo chiedono", "I clienti lo chiedono"))

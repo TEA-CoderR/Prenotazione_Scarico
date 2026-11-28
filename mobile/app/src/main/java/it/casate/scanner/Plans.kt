@@ -12,9 +12,7 @@ import kotlin.math.ceil
 
 object Phrases {
     /** Shown when nothing better is known yet: what the stores ask about the items they cannot order. */
-    val DEFAULTS = listOf("C'è un articolo che lo sostituisce?", "Lo chiedono i clienti, ne vendevamo tanti",
-        "Scaffale vuoto da più di una settimana", "Stesso prodotto con codice nuovo",
-        "Si può ordinare da un altro fornitore?")
+    val DEFAULTS = listOf("C'è un articolo che lo sostituisce o tolgo questo prodotto dallo scaffale?")
     const val SHOWN = 6
     private val SPLIT = Regex("[.;!?\\n]+|,\\s+")
 
@@ -40,11 +38,16 @@ object Phrases {
      * to the office (`common`, published with the catalog), then the defaults.
      */
     fun shown(stored: Map<String, Int>, common: List<String> = emptyList()): List<String> {
+        // 28/11: only the one sentence for now (what this scanner / the stores write is not shown)
+        if (ONLY_DEFAULTS) return DEFAULTS
         val mine = stored.entries.filter { it.value >= 2 }.sortedByDescending { it.value }.map { it.key }
         val out = ArrayList<String>()
         for (p in mine + common + DEFAULTS) if (out.none { key(it) == key(p) }) out.add(p)
         return out.take(SHOWN)
     }
+
+    /** true = show just DEFAULTS (the office asked to keep a single quick sentence). */
+    var ONLY_DEFAULTS = true
 
     /** Tapping a sentence: added at the end of what is written. */
     fun append(text: String, phrase: String): String {
