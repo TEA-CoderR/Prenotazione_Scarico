@@ -27,11 +27,11 @@ object Guide {
                 "Gli articoli sono divisi in gruppi: tocca il titolo di un gruppo per chiuderlo o aprirlo.",
                 "Un solo tasto in basso: dice anche se la lista è già inviata.")),
             Page("guide_ask", "Chiedi all'ufficio", listOf(
-                "Frasi pronte: toccane una per scriverla. Le frasi che usi di più compaiono da sole.",
+                "Frase pronta: toccala per scriverla, poi aggiungi quello che serve.",
                 "Scrivi la domanda: niente più motivi da scegliere.",
                 "Se servono, aggiungi i colli o una foto, poi «Invia».")),
             Page("guide_requests", "Le risposte dell'ufficio", listOf(
-                "Domande e risposte di un articolo sono in un'unica conversazione: rispondi da lì.",
+                "In «Richieste all'ufficio» tocca una riga: si apre la conversazione, rispondi da lì. Tocca l'articolo in alto per aprire la sua scheda.",
                 "Dalla home, «Richieste all'ufficio» diventa gialla quando c'è una risposta da leggere.")),
             Page("guide_instore", "In negozio", listOf(
                 "La giacenza di oggi. Ci arrivi toccando i riquadri della giacenza sulla scheda dell'articolo.",
@@ -39,7 +39,7 @@ object Guide {
                 "Tutti gli arrivi degli ultimi 12 mesi: data, da chi e quanti pezzi.",
                 "Quanti pezzi si vendono ogni mese: utile per capire quanto ordinare.")),
             Page("guide_substitute", "Articolo sostituito", listOf(
-                "Ora vedi anche giacenza e vendite del vecchio articolo, senza cercarlo. Toccalo per i dettagli.",
+                "Ora vedi anche codice, giacenza e vendite del vecchio articolo, senza cercarlo. Toccalo per i dettagli.",
                 "Sotto c'è l'articolo da ordinare al suo posto.")),
             Page("guide_volantino", "Prossimo VOLANTINO", listOf(
                 "Dalla home apri il volantino: «Da preparare» sono gli articoli per cui ti manca merce.",

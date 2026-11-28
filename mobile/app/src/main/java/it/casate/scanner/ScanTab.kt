@@ -305,7 +305,12 @@ internal fun MainActivity.scanTab(): View {
     ui.tap(clear, 999) { input.setText(""); input.requestFocus() }
     // search mode only when someone taps the field (or types): Android also gives the focus to the first text box by
     // itself (after a dialog closes, after the page is rebuilt) and that hid the header and the bottom bar
-    input.setOnTouchListener { _, ev -> if (ev.action == android.view.MotionEvent.ACTION_UP) tapped = true; false }
+    // Android may already have given the field the focus (first text box of the page): a tap then changes no focus,
+    // so the tap itself opens the search page
+    input.setOnTouchListener { _, ev ->
+        if (ev.action == android.view.MotionEvent.ACTION_UP) { tapped = true; main.post { if (input.hasFocus()) { mode(true); showKeyboard(input) } } }
+        false
+    }
     input.setOnFocusChangeListener { _, has ->
         when {
             has && (tapped || !input.text.isNullOrBlank()) -> mode(true)

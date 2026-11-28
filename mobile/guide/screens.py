@@ -125,9 +125,9 @@ SCREENS["guide_ask"] = (
     '<div style="display:flex;gap:10px;align-items:center;padding:14px 12px 10px 16px;border-bottom:1px solid #E1E6EF">'
     '<div class="ph">NI</div><div class="mid"><div class="nm">NICKY MAGIA NATALE 4 ROT.</div>'
     '<div class="sb" style="font-weight:700">Chiedi all\'ufficio acquisti</div></div><div style="font-size:18px;color:#5B6478">✕</div></div>'
-    '<div style="padding:10px 0 0"><div class="chips" data-mk="1"><div class="chip">C\'è un articolo che lo sostituisce?</div>'
-    '<div class="chip">Lo chiedono i clienti</div></div></div>'
-    '<div class="field" data-mk="2">C\'è un articolo che lo sostituisce?<span style="color:#2F6BFF">|</span></div>'
+    '<div style="padding:10px 0 0"><div class="chips" data-mk="1"><div class="chip" style="white-space:normal;border-radius:14px">C\'è un articolo che lo sostituisce o tolgo questo prodotto dallo scaffale?</div>'
+    '</div></div>'
+    '<div class="field" data-mk="2">C\'è un articolo che lo sostituisce o tolgo questo prodotto dallo scaffale?<span style="color:#2F6BFF">|</span></div>'
     '<div class="tools" data-mk="3"><div class="tool">▣ 2 colli</div><div class="tool">◉ Foto</div><div class="send">Invia ➤</div></div></div>'
 )
 
@@ -182,6 +182,7 @@ SCREENS["guide_substitute"] = (
     '<div data-mk="1" style="border:1.5px dashed #C4CCDA;background:#EEF1F6;border-radius:16px;padding:10px 12px;display:flex;gap:12px;align-items:center">'
     '<div class="ph" style="opacity:.6">SV</div><div class="mid"><div style="font-size:10px;font-weight:700;color:#5B6478">HAI SCANSIONATO · NON PIÙ IN VENDITA</div>'
     '<div style="text-decoration:line-through;color:#5B6478;font-weight:600;margin-top:3px">SVELTO PIATTI 980 ML X 3 PZ</div>'
+    '<div class="sb mono" style="margin-top:2px">8720181389917 · 4 pz/collo</div>'
     '<div style="font-size:12px;font-weight:600;margin-top:4px">In negozio 9 pz · venduti 30g 14 · ultima vendita ieri</div></div><span style="color:#5B6478">›</span></div>'
     '<div style="text-align:center;color:#2F6BFF;font-size:18px;margin:6px 0">↓</div>'
     '<div data-mk="2" style="display:flex;gap:12px;align-items:center"><div class="ph b" style="width:64px;height:64px">SV</div><div class="mid">'

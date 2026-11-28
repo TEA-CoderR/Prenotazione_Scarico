@@ -58,7 +58,7 @@ internal fun MainActivity.requestBlock(body: LinearLayout, target: String) {
 
 private data class Quad(val a: Int, val b: Int, val c: Int, val d: Icons.Spec)
 
-private fun MainActivity.markRequestSeen(r: ProductRequest) {
+internal fun MainActivity.markRequestSeen(r: ProductRequest) {
     io.execute {
         val ok = runCatching { api.requestAction(r.id, "seen") }.isSuccess
         if (ok) runCatching { api.fetchList() }.getOrNull()?.let { v -> main.post { list.applied(v, emptyList()); if (!sheet.isOpen && !fullScreen) render() } }
@@ -115,6 +115,12 @@ internal fun MainActivity.askOffice(target: String, name: String, v: Verdict, ol
 internal fun MainActivity.replyOffice(r: ProductRequest, name: String) =
     officeThread(r.ean, name, catalog?.judge(r.ean) ?: Verdict(Kind.UNKNOWN, null, null), r)
 
+/** From «Richieste all'ufficio»: straight into the conversation; its top (the item) opens the item's card. */
+internal fun MainActivity.openThread(r: ProductRequest) {
+    officeThread(r.ean, r.name.ifEmpty { r.ean }, catalog?.judge(r.ean) ?: Verdict(Kind.UNKNOWN, null, null), r, toCard = true)
+    if (r.unseen) markRequestSeen(r)
+}
+
 /** The quick sentences of this scanner (learned from what it sends). */
 private fun MainActivity.phraseStore(): Map<String, Int> = runCatching {
     val o = org.json.JSONObject(api.phrases.ifEmpty { "{}" })
@@ -130,7 +136,7 @@ private fun MainActivity.learnPhrases(text: String) {
  * the text box (ready to type), boxes and photo next to «Invia». New request / change of an open one /
  * reply to the office's question all go through here.
  */
-private fun MainActivity.officeThread(target: String, name: String, v: Verdict, r: ProductRequest?) {
+private fun MainActivity.officeThread(target: String, name: String, v: Verdict, r: ProductRequest?, toCard: Boolean = false) {
     val status = r?.status
     val replying = status == "info"
     val going = status == "open" || replying
@@ -152,8 +158,16 @@ private fun MainActivity.officeThread(target: String, name: String, v: Verdict, 
         else -> Requests.title(r) to requestFg(r)
     }
     hc.addView(ui.text(st.first, 12f, st.second, ui.bold).oneLine(), ui.lp(top = 2))
-    head.addView(hc, ui.lp(w = 0, weight = 1f, start = 10))
     lateinit var d: android.app.Dialog
+    if (toCard) {
+        // the item (photo · name · state) opens its card: SCONOSCIUTO, SOSTITUITO…
+        hc.addView(ui.text("Apri la scheda dell'articolo ›", 12f, C.BLUE, ui.bold).oneLine(), ui.lp(top = 2))
+        val item = ui.row()
+        item.addView(head.getChildAt(0).also { head.removeViewAt(0) })
+        item.addView(hc, ui.lp(w = 0, weight = 1f, start = 10))
+        ui.tap(item, 12) { d.dismiss(); openItem(target) }
+        head.addView(item, ui.lp(w = 0, weight = 1f))
+    } else head.addView(hc, ui.lp(w = 0, weight = 1f, start = 10))
     head.addView(ui.iconTap(Icons.CLOSE, C.MUTED, "Chiudi") { d.dismiss() })
     box.addView(head)
     box.addView(ui.divider())
@@ -172,7 +186,12 @@ private fun MainActivity.officeThread(target: String, name: String, v: Verdict, 
     }
 
     val open = r == null || status == "cancelled" || going || status == "answered"
-    if (!open) return
+    if (!open) {
+        d = bottomDialog(box)
+        d.setOnDismissListener { main.post { focusSink() } }
+        d.show()
+        return
+    }
     val form = ui.col()
     form.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(14))
 
@@ -190,17 +209,19 @@ private fun MainActivity.officeThread(target: String, name: String, v: Verdict, 
         setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
     }
     if (!replying) {
+        val phrases = Phrases.shown(phraseStore(), catalog?.phrases.orEmpty())
+        val one = phrases.size == 1         // a single sentence: whole width, on two lines if needed
         val chips = ui.row()
-        for ((i, ph) in Phrases.shown(phraseStore(), catalog?.phrases.orEmpty()).withIndex()) {
+        for ((i, ph) in phrases.withIndex()) {
             val c = ui.text(ph, 13f, C.INK, ui.medium).apply {
-                background = ui.bg(C.CARD, 999, C.LINE2)
+                background = ui.bg(C.CARD, if (one) 14 else 999, C.LINE2)
                 setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(7))
             }
-            ui.tap(c, 999) { c.haptic(); note.setText(Phrases.append(note.text.toString(), ph)); note.setSelection(note.text.length) }
-            chips.addView(c, ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = if (i == 0) 0 else 6))
+            ui.tap(c, if (one) 14 else 999) { c.haptic(); note.setText(Phrases.append(note.text.toString(), ph)); note.setSelection(note.text.length) }
+            if (one) form.addView(c, ui.lp(bottom = 8))
+            else chips.addView(c, ui.lp(w = LinearLayout.LayoutParams.WRAP_CONTENT, start = if (i == 0) 0 else 6))
         }
-        val hs = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) }
-        form.addView(hs, ui.lp(bottom = 8))
+        if (!one) form.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) }, ui.lp(bottom = 8))
     }
     form.addView(note)
 

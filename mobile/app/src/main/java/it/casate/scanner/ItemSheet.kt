@@ -79,6 +79,7 @@ internal fun MainActivity.showItem() {
         val oc = ui.col()
         oc.addView(ui.text("HAI SCANSIONATO · NON PIÙ IN VENDITA", 10f, C.MUTED, ui.bold).oneLine())
         oc.addView(ui.struck(ui.text(v.item.name, 13f, C.MUTED, ui.medium)).oneLine(), ui.lp(top = 3))
+        oc.addView(ui.num(v.item.ean + (v.item.pack?.takeIf { it > 0 }?.let { " · ${n(it)} pz/collo" } ?: ""), 12f, C.MUTED).oneLine(), ui.lp(top = 2))
         // the old item's numbers too (stock still on the shelf, what it sold): no need to look the old code up
         val oi = catalog?.info(v.item.ean)
         if (oi != null) {

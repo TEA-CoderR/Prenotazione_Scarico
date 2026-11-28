@@ -211,10 +211,14 @@ class MainActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
+    private var lastTick = 0L
     private val tick = object : Runnable {
         override fun run() {
-            if (!fullScreen && !sheet.isOpen) sync(quiet = true)
-            main.postDelayed(this, 60_000)
+            val now = System.currentTimeMillis()
+            // the office's answers: every 20 s while «Richieste all'ufficio» is open, every minute elsewhere
+            val every = if (tab == Tab.REQUESTS) 20_000L else 60_000L
+            if (now - lastTick >= every - 1_000 && !fullScreen && !sheet.isOpen) { lastTick = now; sync(quiet = true) }
+            main.postDelayed(this, 20_000)
         }
     }
 
@@ -522,6 +526,10 @@ class MainActivity : Activity() {
         "urgent" -> C.ORANGE
         "remind" -> C.AMBER
         else -> C.GREEN
+    }
+
+    internal fun showKeyboard(v: View) {
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
     }
 
     internal fun hideKeyboard(v: View) {
